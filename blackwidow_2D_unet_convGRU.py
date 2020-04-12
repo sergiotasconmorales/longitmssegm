@@ -69,7 +69,7 @@ options['test_path'] = path_test
 # train/validation split percentage
 options['val_split']  = 0.2
 # Define modalities to be considered
-options['input_data'] = ['flair', 'mprage'] #No format
+options['input_data'] = ['flair', 'mprage', 'pd'] #No format
 # Define ground truth name
 #options['gt'] = 'mask_FLAIR.nii.gz'
 options['gt'] = 'mask1'
@@ -173,8 +173,8 @@ from torch.optim import Adadelta, Adam
 
 # Define the model 
 #lesion_model = UNet_ConvGRU_2D_alt(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
-lesion_model = UNet_ConvLSTM_Goku(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
-#lesion_model = UNet_ConvLSTM_2D_alt(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
+#lesion_model = UNet_ConvLSTM_Goku(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
+lesion_model = UNet_ConvLSTM_2D_alt(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 
 #lesion_model = UNet2D(n_channels = len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 
