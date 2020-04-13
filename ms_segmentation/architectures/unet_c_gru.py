@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import torch
 from .c_lstm import ConvLSTM
 from .c_gru import ConvGRU, ConvGRU3D
-from .unet2d import DoubleConv, Down, Up, OutConv
+from .unet2d import DoubleConv, Down, Up, OutConv, SUp
 from .unet3d import DoubleConv3D, Down3D, Up3D, OutConv3D
 
 
@@ -426,7 +426,7 @@ class UNet_ConvLSTM_Goku(nn.Module):
         num_time_steps = the_input1.size(1)
         the_output = torch.zeros_like(torch.Tensor(the_input1.size(0), num_time_steps, out_channels, int(2*the_input1.size(-2)), int(2*the_input1.size(-1)))).cuda()
         for i_tp in range(num_time_steps):
-            the_output[:,i_tp,:,:,:] = layer(the_input1[:,i_tp,:,:,:], the_input2[:,i_tp,:,:,:])
+            the_output[:,i_tp,:,:,:] = layer(the_input1[:,i_tp,:,:,:], the_input2[:,i_tp,:,:,:], sum=True)
         return the_output
 
     def forward(self, x):
@@ -447,6 +447,121 @@ class UNet_ConvLSTM_Goku(nn.Module):
 
 
 
+class UNet_ConvLSTM_Vegeta(nn.Module):
+    """
+    Basic U-net model + LSTM
+    
+    """
+
+    def __init__(self, n_channels, n_classes, bilinear=True):
+
+        super(UNet_ConvLSTM_Vegeta, self).__init__()
+
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        self.inc = DoubleConv(n_channels, 16)
+        self.down1 = Down(16, 32)
+        self.down2 = Down(32, 64)
+        #self.down3 = Down(128, 256)
+
+        self.convLSTM1 = ConvLSTM(input_size=(160,200),
+                                input_dim=16,
+                                hidden_dim=[32],
+                                kernel_size=(3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.convLSTM2 = ConvLSTM(input_size=(80,100),
+                                input_dim=32,
+                                hidden_dim=[64],
+                                kernel_size=(3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.convLSTM3 = ConvLSTM(input_size=(40,50),
+                                input_dim=64,
+                                hidden_dim=[128],
+                                kernel_size=(3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.sup1 = SUp(32,32, bilinear)
+        self.sup2 = SUp(64,64,bilinear)
+
+        self.conv1 = DoubleConv(32,64)
+        self.conv2 = DoubleConv(64,128)
+
+        
+        self.up1 = Up(256, 64, bilinear)
+        self.up2 = Up(128, 16, bilinear)
+        #self.up3 = Up(256, 64, bilinear)
+        
+        self.convLSTM5 = ConvLSTM(  input_size = (160,200),
+                                    input_dim=16,
+                                    hidden_dim=[32],
+                                    kernel_size=(3,3),
+                                    num_layers=1,
+                                    batch_first=True,
+                                    bias = True,
+                                    return_all_layers=False)
+        self.outc = OutConv(32, n_classes)
+
+
+
+        # Define wrappers
+    def wrapper_conv(self, the_input, layer, out_channels, layer_type= "Down"):
+        num_time_steps = the_input.size(1)
+        if layer_type == "DoubleConv":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-2), the_input.size(-1))).cuda()
+        elif layer_type == "Down":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-2)//2, the_input.size(-1)//2)).cuda()
+        else: #layer_type == OutConv
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), out_channels, the_input.size(-2), the_input.size(-1))).cuda()
+            the_output = layer(the_input)
+            return the_output
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:] = layer(the_input[:,i_tp,:,:,:])
+        return the_output
+
+    def wrapper_up(self, the_input1, the_input2, layer, out_channels):
+
+        num_time_steps = the_input1.size(1)
+        the_output = torch.zeros_like(torch.Tensor(the_input1.size(0), num_time_steps, out_channels, int(2*the_input1.size(-2)), int(2*the_input1.size(-1)))).cuda()
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:] = layer(the_input1[:,i_tp,:,:,:], the_input2[:,i_tp,:,:,:], sum=True)
+        return the_output
+
+    def wrapper_sup(self, the_input, layer, out_channels):
+        num_time_steps = the_input.size(1)
+        the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels,int(2*the_input.size(-2)), int(2*the_input.size(-1)))).cuda()
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:] = layer(the_input[:,i_tp,:,:,:])
+        return the_output
+
+
+    def forward(self, x):
+        x1 = self.wrapper_conv(x, self.inc, 16, layer_type = "DoubleConv")
+        x2 = self.wrapper_conv(x1, self.down1, 32)
+        x3 = self.wrapper_conv(x2, self.down2, 64)
+        x4 = self.convLSTM1(x1)[0]
+        x5 = self.convLSTM2(x2)[0]
+        x6 = self.convLSTM3(x3)[0]
+        x7 = self.wrapper_sup(x2, self.sup1, 32)
+        x8 = self.wrapper_sup(x3, self.sup2, 64)
+        x9 = self.wrapper_conv(x4+x7, self.conv1, 64, layer_type = "DoubleConv")
+        x10 = self.wrapper_conv(x5+x8, self.conv2, 128, layer_type="DoubleConv")
+
+        x = self.wrapper_up(x6, x10, self.up1,64)
+        x = self.wrapper_up(x, x9, self.up2, 16)
+        x = self.convLSTM5(x)[0]
+        x = x[:,-1,:,:,:] #Take last time point
+        logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
+        return logits
 
 
 

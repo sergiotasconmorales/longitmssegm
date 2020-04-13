@@ -22,7 +22,7 @@ from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim
 from medpy.io import load
 from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku, UNet_ConvLSTM_Vegeta
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
@@ -165,21 +165,18 @@ if(options['loss'] == 'cross-entropy'):
     class_weights = torch.FloatTensor(weights).cuda()
 
 
-
-
 from torch.optim import Adadelta, Adam
-
-
 
 # Define the model 
 #lesion_model = UNet_ConvGRU_2D_alt(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
+#lesion_model = UNet_ConvLSTM_Vegeta(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 #lesion_model = UNet_ConvLSTM_Goku(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 lesion_model = UNet_ConvLSTM_2D_alt(n_channels=len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 
 #lesion_model = UNet2D(n_channels = len(options['input_data']), n_classes = options['num_classes'], bilinear = False)
 
 #lesion_model.cuda()
-#input_tensor = torch.rand(5, 3, 2, 160, 200).cuda()
+#input_tensor = torch.rand(5, 3, 3, 160, 200).cuda()
 #pred = lesion_model(input_tensor)
 
 options['model_name'] = lesion_model.__class__.__name__
@@ -213,16 +210,6 @@ epoch = 1
 if not training and options['loss'] == "cross-entropy":
     weights = [1.0, 40.0]
     class_weights = torch.FloatTensor(weights).cuda()
-
-#To try:
-# pw = [num0/num1]
-# cw = torch.FloatTensor(pw).cuda()
-# criterion = torch.nn.BCEWithLogitsLoss(pos_weight = cw)
-
-# all_losses_train = []
-# all_losses_val = []
-# all_dices_train = []
-# all_dices_val = []
 
 try:
     while training:
