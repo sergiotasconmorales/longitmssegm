@@ -63,7 +63,7 @@ class Up(nn.Module):
 
         self.conv = DoubleConv(in_channels, out_channels)
 
-    def forward(self, x1, x2):
+    def forward(self, x1, x2, sum=False):
         x1 = self.up(x1)
         # input is CHW
         diffY = torch.tensor([x2.size()[2] - x1.size()[2]])
@@ -74,9 +74,28 @@ class Up(nn.Module):
         # if you have padding issues, see
         # https://github.com/HaiyongJiang/U-Net-Pytorch-Unstructured-Buggy/commit/0e854509c2cea854e247a9c615f175f76fbb2e3a
         # https://github.com/xiaopeng-liao/Pytorch-UNet/commit/8ebac70e633bac59fc22bb5195e513d5832fb3bd
-        x = torch.cat([x2, x1], dim=1)
+        if(sum):
+            x = torch.cat([x2, x1], dim=1)
+        else:
+            x = x2+x1
         return self.conv(x)
 
+
+class SUp(nn.Module):
+    """Simple Upscaling (channel dimension not modified"""
+
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super().__init__()
+
+        # if bilinear, use the normal convolutions to reduce the number of channels
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.up = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=2, stride=2)
+
+    def forward(self, x):
+        x1 = self.up(x)
+        return x1
 
 class OutConv(nn.Module):
     def __init__(self, in_channels, out_channels):
