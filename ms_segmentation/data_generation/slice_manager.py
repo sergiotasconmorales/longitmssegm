@@ -246,7 +246,102 @@ class SlicesLoader(Dataset):
                 break
         return lower_limit, upper_limit
 
+class SlicesLoaderLoadAll(Dataset):
+    """Slices."""
 
+    def __init__(self,
+                 input_data,
+                 labels,
+                 roi,
+                 normalize=True, # Whether or not the patches should be normalized
+                 norm_type='zero_one',
+                 transform=None): # Transforms to be applied to the patches
+
+        self.input_data = list(input_data.values()) # Extract image paths from dictionary
+        self.input_labels = list(labels.values()) # Extract labels paths from dictionary
+        self.normalize = normalize
+        self.norm_type = norm_type
+        self.transform = transform
+        self.input_rois = list(roi.values())
+
+        self.num_modalities = len(list(input_data.values())[0])
+
+        self.data, self.labels = self.load_all()
+
+
+
+    def __len__(self):
+        return self.data.shape[0]
+
+    def __getitem__(self, idx):
+
+        return self.data[idx], self.labels[idx, np.newaxis, :, :]
+
+    def load_all(self):
+        all_elements = []
+        for i in range(len(self.input_data)): # Process one image at a time
+            # read first image to get number of slices
+            roi = nib.load(self.input_rois[i][0]).get_fdata()
+            #total_slices = roi.shape[2]
+            #total_slices = nib.load(self.input_data[i][0]).get_fdata().shape[2]
+            lower_limit, upper_limit = self.get_limits(roi)
+            #lower_limit = self.num_slices//2
+            #upper_limit = total_slices - lower_limit - 1
+            for j in range(lower_limit,upper_limit):    
+                all_elements.append(([self.input_data[i][h] for h in range(self.num_modalities)], self.input_labels[i], j))
+
+        output_data = np.zeros((len(all_elements), self.num_modalities, roi.shape[0], roi.shape[1]), dtype = 'float32')
+        output_labels = np.zeros((len(all_elements), roi.shape[0], roi.shape[1]), dtype='float32')
+        for idx in range(len(all_elements)):
+            print("loading element ", idx+1, "/", len(all_elements))
+            if self.normalize: #Wrong: Normalize whole image, not slice. AND DONT NORMALIZE LABELS
+                s = [normalize_data( nib.load(all_elements[idx][0][k]).get_fdata().astype('float32'), norm_type = self.norm_type)[:,:,all_elements[idx][2]]
+                            for k in range(self.num_modalities)]
+            else:
+                s = [nib.load(all_elements[idx][0][k]).get_fdata().astype('float32')[:,:,all_elements[idx][2]]
+                            for k in range(self.num_modalities)]
+
+            l = [nib.load(
+                    all_elements[idx][1][0]).get_fdata()[:,:,all_elements[idx][2]].astype('float32')]
+
+            images = np.zeros((self.num_modalities, l[0].shape[0], l[0].shape[1]))
+            for i_mod in range(self.num_modalities):
+                images[i_mod,:,:] = s[i_mod]
+
+
+            output_data[idx,:,:,:] = images
+            output_labels[idx] = l[0]
+        return output_data, output_labels
+
+    def list_folders(self,the_path):
+        return [d for d in os.listdir(the_path) if os.path.isdir(os.path.join(the_path, d))]
+
+    def get_limits(self, roi):
+        """Function to get indexes of first and last brain slices (where brain begins and where it ends)
+        
+        Parameters
+        ----------
+        roi : numpy array
+            Brain mask
+        
+        Returns
+        -------
+        lower_limit: int
+            Indexes of first brain slice according to the mask
+        upper_limit: int
+            Indexes of last brain slice according to the mask
+        """
+        for i in range(roi.shape[2]): #For each slice
+            curr_slice = roi[:,:,i]
+            if(np.count_nonzero(curr_slice)>0):
+                lower_limit = i
+                break
+        for i in range(roi.shape[2]-1, 0, -1):
+            curr_slice = roi[:,:,i]
+            if(np.count_nonzero(curr_slice)>0):
+                upper_limit = i
+                break
+        return lower_limit, upper_limit
 
 
 class SlicesGroupLoaderTime(Dataset):
@@ -535,8 +630,6 @@ class SlicesGroupLoaderTimeLoadAll(Dataset):
 
 
 
-
-
 def get_inference_slices(scan_path, input_data, normalize=True, norm_type = 'zero_one'):
 
     if normalize: 
@@ -557,8 +650,8 @@ def get_inference_slices(scan_path, input_data, normalize=True, norm_type = 'zer
 
     return images
 
-def get_inference_slices_time(the_path, the_case, input_data, out_size, normalize = True, norm_type='zero_one'):
-    """Function to return the inference patches with dimension (num_slices, num_timepoints, modalities, height, width)
+def get_inference_slices_time(the_path, the_case, input_data, out_size, crop = True, normalize = True, norm_type='zero_one'):
+    """Function to return the inference slices with dimension (num_slices, num_timepoints, modalities, height, width)
     
     Parameters
     ----------
@@ -594,8 +687,8 @@ def get_inference_slices_time(the_path, the_case, input_data, out_size, normaliz
             else:
                 all_slices[:,t, mod,:,:] = np.transpose(nib.load(list_images[the_case][t][mod]).get_fdata(), (2,0,1))
 
-
-    all_slices = crop_images(all_slices, out_size)
+    if crop:
+        all_slices = crop_images(all_slices, out_size)
 
     return all_slices
 

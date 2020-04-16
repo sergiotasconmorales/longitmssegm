@@ -170,6 +170,22 @@ def find_element_in_list_that_contains(the_list, the_string):
         return elems
 
 def list_files_with_name_containing(the_path, the_string, the_format):
+    """Function to list all files that contain <the_string>
+    
+    Parameters
+    ----------
+    the_path : [type]
+        [description]
+    the_string : [type]
+        [description]
+    the_format : [type]
+        [description]
+    
+    Returns
+    -------
+    [type]
+        [description]
+    """
     files = list_files_with_extension(the_path, the_format)
     return [os.path.join(the_path, f) for f in files if the_string in f]
 
@@ -202,6 +218,19 @@ def print_line():
     """ Function to print a line in the console
     """
     print("-------------------------------------------------------------------")
+
+def expand_dictionary(input_dict):
+    output_dict = {}
+    for k0,v0 in input_dict.items():
+        curr_dict = v0
+        temp_dict = {}
+        for k1,v1 in curr_dict.items():
+            cnt=1
+            for tp in range(len(v1)):
+                temp_dict[k1 + "_" + str(cnt).zfill(2)] = v1[tp]
+                cnt+=1
+        output_dict[k0] = temp_dict
+    return output_dict
 
 def cls():
     """Function to clear the console

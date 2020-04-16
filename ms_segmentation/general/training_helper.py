@@ -96,14 +96,35 @@ def create_training_validation_sets(options, dataset_mode="cs"):
                 input_dictionary['input_train_labels']....
 
     """
+    if 'training_path' in options: #If no cross-validation paths are given
+        training_scans = os.listdir(options['training_path'])
+    else: #If cross-validation, list of folders is given instead of path
+        training_scans = options['training_samples']
+        options['training_path'] = options['path_data']
 
-    training_scans = os.listdir(options['training_path'])
     random.shuffle(training_scans)
+
+    if 'test_path' in options:
+        test_scans = os.listdir(options['test_path']) #Test images
+    else: #If cross-validation, list of folders is given instead of path
+        test_scans = options['test_samples']
+        options['test_path'] = options['path_data']
 
     t_d = int(len(training_scans) * (1 - options['val_split']))
     training_data = training_scans[:t_d] #Training images
     validation_data = training_scans[t_d:] #Validation images
-    test_scans = os.listdir(options['test_path']) #Test images
+
+    # add condition to modify distribution if 02 is validation when 01 is test or if 01 is validation when 02 is test
+    if len(validation_data) == 1 and len(test_scans)==1:
+        if (test_scans[0] == '01' and validation_data[0] == '02') or (test_scans[0] == '02' and validation_data[0] == '01'):
+            pass
+            temp = training_data.copy()
+            temp = training_data.copy() # for some reason I have to do it twice or temp is not created
+            temp[0] = validation_data[0] #Exchange validation patient with first training patient
+            validation_data[0] = training_data[0]
+            training_data = temp          
+
+
 
     input_dictionary = {}
 
