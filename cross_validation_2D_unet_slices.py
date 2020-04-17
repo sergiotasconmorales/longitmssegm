@@ -69,7 +69,7 @@ else:
 
 fold = 0
 
-
+#experiment_name = 'CROSS_VALIDATION_unet2d_2020-04-16_12_01_25'
 for curr_test_patient in all_patients:
     fold += 1
     curr_train_patients = all_patients.copy()
@@ -389,12 +389,12 @@ for curr_test_patient in all_patients:
                                                 out_size = None,
                                                 norm_type = 'zero_one')
 
-        for t in inf_slices_all.shape[1]: # for every timepoint
-            inf_slices = inf_slices_all[t]
+        for t in range(inf_slices_all.shape[1]): # for every timepoint
+            inf_slices = inf_slices_all[:,t,:,:,:]
             probs = get_probs(inf_slices, lesion_model, device, options['num_classes'], options)
             labels = np.transpose(np.argmax(probs, axis=1).astype(np.uint8), (1,2,0))
 
-            labels_gt = nib.load(jp(path_test, case, options['gt'])).get_fdata().astype(np.uint8)  #GT  
+            labels_gt = nib.load(jp(path_test, case, options['gt']+"_" + str(t+1).zfill(2) +".nii.gz")).get_fdata().astype(np.uint8)  #GT  
 
             #DSC
             dsc = compute_dices(labels_gt.flatten(), labels.flatten())
@@ -405,8 +405,7 @@ for curr_test_patient in all_patients:
             #Save result
             img_nib = nib.Nifti1Image(labels, np.eye(4))
             create_folder(jp(path_segmentations, case))
-            nib.save(img_nib, jp(path_segmentations, case, case+"_segm.nii.gz"))
-
+            nib.save(img_nib, jp(path_segmentations, case, case+"_"+ str(t+1).zfill(2) +"_segm.nii.gz"))
             cnt += 1
 
 
