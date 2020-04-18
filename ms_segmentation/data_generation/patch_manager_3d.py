@@ -1088,8 +1088,6 @@ class PatchLoader3DTime_alt(Dataset):
         training_indexes = []
         # patch_half = tuple([idx // 2 for idx in self.patch_size])
 
-        #TODO: Include information about case number (store dictionary instead of list in init)
-
         for patient_number,timepoints_list in self.input_data.items(): # For each patient
             
             #Check that num_timepoints < len(timepoints_list)
@@ -1231,7 +1229,7 @@ class PatchLoader3DTime_alt_all(Dataset):
     """
     Dataset class for loading MRI patches from multiple modalities. Based on script utils.py provided by Sergi Valverde. 
     Difference with respect to PatchLoader3DTime: Timepoints are sliced so that more patches can be taken
-
+    All patches are loaded at once
     """
 
     def __init__(self,
@@ -1320,6 +1318,7 @@ class PatchLoader3DTime_alt_all(Dataset):
         all_labels = np.zeros((len(self.patch_indexes), self.num_timepoints, self.patch_size[0],self.patch_size[1],self.patch_size[2]), dtype=np.uint8)
         
         for idx in range(len(self.patch_indexes)):
+            print(idx+1, "/", len(self.patch_indexes))
             im_ = self.patch_indexes[idx][0] #Patient
             slice_indexes = self.patch_indexes[idx][1] #Time slices
             center = self.patch_indexes[idx][2] #Center of the patch
@@ -1371,13 +1370,13 @@ class PatchLoader3DTime_alt_all(Dataset):
 
 
 
-                output_patch[ind,:,:,:] = input_train 
-                output_label[ind,:,:,:] = input_label
+                output_patch[ind,:,:,:,:] = input_train 
+                output_label[ind,:,:,:,:] = input_label
 
                 ind+=1
 
             all_patches[idx,:,:,:,:,:] = output_patch 
-            all_labels[idx,:,:,:,:] = output_label
+            all_labels[idx,:,:,:,:] = output_label[:,0,:,:,:]
 
         return all_patches, all_labels
 
