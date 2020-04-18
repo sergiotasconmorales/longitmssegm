@@ -3,15 +3,15 @@ import torch.nn.functional as F
 import torch
 from .c_lstm import ConvLSTM
 from .c_gru import ConvGRU, ConvGRU3D
+from .c_lstm import ConvLSTM3D
 from .unet2d import DoubleConv, Down, Up, OutConv, SUp
 from .unet3d import DoubleConv3D, Down3D, Up3D, OutConv3D
 
 
 class UNet_ConvGRU_2D(nn.Module):
     """
-    Basic U-net+ConvGRU model
-    Changes: 
-        Sub-sampling by max-pooling
+    Basic U-net+ConvGRU model. UNet layers built with basic blocks without batch normalization.
+    Skip connections are implemented by additions
     """
 
     def __init__(self, input_size, output_size):
@@ -63,10 +63,6 @@ class UNet_ConvGRU_2D(nn.Module):
                                 batch_first = True,
                                 bias = True,
                                 return_all_layers = False)
-        # self.test = nn.Conv2d(in_channels = 128,
-        #                             out_channels = 256,
-        #                             kernel_size = 3,
-        #                             padding = 1)
 
         # up-sample conv4
         self.up1 = nn.ConvTranspose2d(in_channels=256,
@@ -176,9 +172,7 @@ class UNet_ConvGRU_2D(nn.Module):
 
 class UNet_ConvGRU_2D_alt(nn.Module):
     """
-    Basic U-net model
-    Changes: 
-        Sub-sampling by max-pooling
+    Basic U-net model. Layers implemented with blocks from unet2d file which include double convolutions and concatenations for skip connections
     """
 
     def __init__(self, n_channels, n_classes, bilinear=True):
@@ -447,130 +441,7 @@ class UNet_ConvLSTM_Goku(nn.Module):
 
 
 
-class UNet_ConvLSTM_Vegeta(nn.Module):
-    """
-    Basic U-net model + LSTM
-    
-    """
-
-    def __init__(self, n_channels, n_classes, bilinear=True):
-
-        super(UNet_ConvLSTM_Vegeta, self).__init__()
-
-        self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.bilinear = bilinear
-
-        self.inc = DoubleConv(n_channels, 16)
-        self.down1 = Down(16, 32)
-        self.down2 = Down(32, 64)
-        #self.down3 = Down(128, 256)
-
-        self.convLSTM1 = ConvLSTM(input_size=(160,200),
-                                input_dim=16,
-                                hidden_dim=[32],
-                                kernel_size=(3,3),
-                                num_layers=1,
-                                batch_first = True,
-                                bias = True,
-                                return_all_layers = False)
-        self.convLSTM2 = ConvLSTM(input_size=(80,100),
-                                input_dim=32,
-                                hidden_dim=[64],
-                                kernel_size=(3,3),
-                                num_layers=1,
-                                batch_first = True,
-                                bias = True,
-                                return_all_layers = False)
-        self.convLSTM3 = ConvLSTM(input_size=(40,50),
-                                input_dim=64,
-                                hidden_dim=[128],
-                                kernel_size=(3,3),
-                                num_layers=1,
-                                batch_first = True,
-                                bias = True,
-                                return_all_layers = False)
-        self.sup1 = SUp(32,32, bilinear)
-        self.sup2 = SUp(64,64,bilinear)
-
-        self.conv1 = DoubleConv(32,64)
-        self.conv2 = DoubleConv(64,128)
-
-        
-        self.up1 = Up(256, 64, bilinear)
-        self.up2 = Up(128, 16, bilinear)
-        #self.up3 = Up(256, 64, bilinear)
-        
-        self.convLSTM5 = ConvLSTM(  input_size = (160,200),
-                                    input_dim=16,
-                                    hidden_dim=[32],
-                                    kernel_size=(3,3),
-                                    num_layers=1,
-                                    batch_first=True,
-                                    bias = True,
-                                    return_all_layers=False)
-        self.outc = OutConv(32, n_classes)
-
-
-
-        # Define wrappers
-    def wrapper_conv(self, the_input, layer, out_channels, layer_type= "Down"):
-        num_time_steps = the_input.size(1)
-        if layer_type == "DoubleConv":
-            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-2), the_input.size(-1))).cuda()
-        elif layer_type == "Down":
-            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-2)//2, the_input.size(-1)//2)).cuda()
-        else: #layer_type == OutConv
-            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), out_channels, the_input.size(-2), the_input.size(-1))).cuda()
-            the_output = layer(the_input)
-            return the_output
-        for i_tp in range(num_time_steps):
-            the_output[:,i_tp,:,:,:] = layer(the_input[:,i_tp,:,:,:])
-        return the_output
-
-    def wrapper_up(self, the_input1, the_input2, layer, out_channels):
-
-        num_time_steps = the_input1.size(1)
-        the_output = torch.zeros_like(torch.Tensor(the_input1.size(0), num_time_steps, out_channels, int(2*the_input1.size(-2)), int(2*the_input1.size(-1)))).cuda()
-        for i_tp in range(num_time_steps):
-            the_output[:,i_tp,:,:,:] = layer(the_input1[:,i_tp,:,:,:], the_input2[:,i_tp,:,:,:], sum=True)
-        return the_output
-
-    def wrapper_sup(self, the_input, layer, out_channels):
-        num_time_steps = the_input.size(1)
-        the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels,int(2*the_input.size(-2)), int(2*the_input.size(-1)))).cuda()
-        for i_tp in range(num_time_steps):
-            the_output[:,i_tp,:,:,:] = layer(the_input[:,i_tp,:,:,:])
-        return the_output
-
-
-    def forward(self, x):
-        x1 = self.wrapper_conv(x, self.inc, 16, layer_type = "DoubleConv")
-        x2 = self.wrapper_conv(x1, self.down1, 32)
-        x3 = self.wrapper_conv(x2, self.down2, 64)
-        x4 = self.convLSTM1(x1)[0]
-        x5 = self.convLSTM2(x2)[0]
-        x6 = self.convLSTM3(x3)[0]
-        x7 = self.wrapper_sup(x2, self.sup1, 32)
-        x8 = self.wrapper_sup(x3, self.sup2, 64)
-        x9 = self.wrapper_conv(x4+x7, self.conv1, 64, layer_type = "DoubleConv")
-        x10 = self.wrapper_conv(x5+x8, self.conv2, 128, layer_type="DoubleConv")
-
-        x = self.wrapper_up(x6, x10, self.up1,64)
-        x = self.wrapper_up(x, x9, self.up2, 16)
-        x = self.convLSTM5(x)[0]
-        x = x[:,-1,:,:,:] #Take last time point
-        logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
-        return logits
-
-
-
-
-
-
-
 #3D
-
 
 
 
@@ -721,7 +592,7 @@ class UNet_ConvGRU_3D_alt(nn.Module):
     """
     Basic U-net model
     Changes: 
-        Sub-sampling by max-pooling
+        Blocks implemented according to class blocks defined in unet3d file
     """
 
     def __init__(self, n_channels, n_classes, bilinear=True):
@@ -736,12 +607,11 @@ class UNet_ConvGRU_3D_alt(nn.Module):
         self.down1 = Down3D(32, 64)
         self.down2 = Down3D(64, 128)
         self.down3 = Down3D(128, 256)
-        self.convGRU1 = ConvGRU3D(input_size=(4,4,4),
+        self.convLSTM1 = ConvLSTM3D(input_size=(4,4,4),
                                 input_dim=256,
                                 hidden_dim=[256],
                                 kernel_size=(3,3,3),
                                 num_layers=1,
-                                dtype=torch.cuda.FloatTensor,
                                 batch_first = True,
                                 bias = True,
                                 return_all_layers = False)
@@ -750,6 +620,14 @@ class UNet_ConvGRU_3D_alt(nn.Module):
         self.up2 = Up3D(256, 64, bilinear)
         self.up3 = Up3D(128, 32, bilinear)
         self.up4 = Up3D(64, 32, bilinear)
+        self.convLSTM2 = ConvLSTM3D(input_size=(32,32,32),
+                                input_dim=32,
+                                hidden_dim=[32],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
         self.outc = OutConv3D(32, n_classes)
 
 
@@ -783,16 +661,16 @@ class UNet_ConvGRU_3D_alt(nn.Module):
         x2 = self.wrapper_conv(x1, self.down1, 64) # (5,3,64,16,16,16)
         x3 = self.wrapper_conv(x2, self.down2, 128) # (5,3,128,8,8,8)
         x4 = self.wrapper_conv(x3, self.down3, 256) # (5,3,256,4,4,4)
-        x5_ = self.convGRU1(x4)[0][0] # (5,3,256,4,4,4)
+        x5_ = self.convLSTM1(x4)[0] # (5,3,256,4,4,4)
         x5 = self.wrapper_conv(x5_, self.down4, 256) # (5,3,256,2,2,2)
         #
         x = self.wrapper_up(x5, x4, self.up1,128) # (5,3,128,4,4,4)
         x = self.wrapper_up(x, x3, self.up2, 64) # (5,3,64,8,8,8)
         x = self.wrapper_up(x, x2, self.up3, 32) # (5,3,32,16,16,16)
         x = self.wrapper_up(x, x1, self.up4, 32) # (5,3,32,32,32,32)
-
+        x = self.convLSTM2(x)[0]
         #x = self.convGRU2(x)[0][0].permute(0,2,1,3,4,5) #(5,32,3,32,32,32)
 
-        x = x[:,-1,:,:,:] # (5,32,32,32,32)
+        x = x[:,-1,:,:,:,:] # (5,32,32,32,32)
         logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
         return logits # (5,2,32,32,32)

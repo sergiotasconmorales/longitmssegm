@@ -38,13 +38,13 @@ path_train = jp(path_data, "train")
 path_test = jp(path_data, "test")
 #path_test = r'D:\dev\ISBI_CS\test'
 #path_test = r'D:\dev\INS_Test\test'
-debug = True
+debug = False
 
 
 if(debug):
     experiment_name = "dummy_UNetConvGRU"
 else:
-    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "UNetConvGRU")
+    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "UNetConvGRU3D")
 #experiment_name = 'UNetConvGRU_2020-04-01_14_47_12'
 path_results = jp(path_data, experiment_name)
 create_folder(path_results)
@@ -73,7 +73,7 @@ options['test_path'] = path_test
 options['val_split']  = 0.2
 # Define modalities to be considered
 #options['input_data'] = ['FLAIR_masked.nii.gz', 'T1_masked.nii.gz']
-options['input_data'] = ['flair', 'mprage']
+options['input_data'] = ['flair', 'mprage', 'pd']
 # Define ground truth name
 #options['gt'] = 'mask_FLAIR.nii.gz'
 options['gt'] = 'mask1'
@@ -111,10 +111,10 @@ input_dictionary = create_training_validation_sets(options, dataset_mode="l")
 
 transf = transforms.ToTensor()
 
-"""
+
 
 print('Training data: ')
-training_dataset = PatchLoader3DTime_alt(input_data=input_dictionary['input_train_data'],
+training_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_train_data'],
                                        labels=input_dictionary['input_train_labels'],
                                        rois=input_dictionary['input_train_rois'],
                                        patch_size=options['patch_size'],
@@ -132,7 +132,7 @@ training_dataloader = DataLoader(training_dataset,
                                  shuffle=True)
 
 print('Validation data: ')
-validation_dataset = PatchLoader3DTime_alt(input_data=input_dictionary['input_val_data'],
+validation_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_val_data'],
                                         labels=input_dictionary['input_val_labels'],
                                         rois=input_dictionary['input_val_rois'],
                                         patch_size=options['patch_size'],
@@ -146,7 +146,7 @@ validation_dataloader = DataLoader(validation_dataset,
                                    batch_size=options['batch_size'],
                                    shuffle=True)
 
-"""
+
 
 #Get frequency of each label
 if(options['loss'] == 'cross-entropy'):
@@ -187,7 +187,7 @@ lesion_model = UNet_ConvGRU_3D_alt(n_channels=len(options['input_data']), n_clas
 #lesion_model = UNet3D_1(input_size=len(options['input_data']), output_size=2)
 #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
 # lesion_model.cuda()
-# input_tensor = torch.rand(5, 3, 2, 32, 32, 32).cuda()
+# input_tensor = torch.rand(5, 3, 3, 32, 32, 32).cuda()
 # pred = lesion_model(input_tensor)
 
 
@@ -216,7 +216,7 @@ train_jaccs = []
 val_jaccs = []
 
 # training loop
-training = False
+training = True
 train_complete = False
 epoch = 1
 
@@ -266,7 +266,7 @@ try:
                 # y = [batch_size, num_timepoints, 1, patch_dim1, patch_dim2, patch_dim3]
     
                 x = data.to(device)
-                y = target[:,-2,:,:,:,:].to(device)
+                y = target[:,-1,:,:,:,:].to(device)
                 
                 #save_batch(x, y)
 
@@ -420,7 +420,38 @@ else:
 
 
 
+def divide_inference_slices(all_slices, desired_timepoints):
+    #Format for all_slices is (num_slices, num_timepoints, num_modalities, Height, Width)
+    _, num_timepoints, _, _, _, _ = all_slices.shape
+    
+    if(num_timepoints == desired_timepoints): #Special case if number of timepoints coincides with desired number of timepoints
+        #TODO: special case -> How to predict timepoint in the middle
+        pass
 
+    list_inference_patches = []
+    indexes = []
+    num_forward = num_timepoints - desired_timepoints + 1
+    for i in range(num_forward):
+        list_inference_patches.append(all_slices[:,i:i+desired_timepoints,:,:,:,:])
+        indexes.append(i+desired_timepoints)
+
+    all_slices = np.flip(all_slices, axis = 1).copy()
+    num_backward = num_forward
+    if(num_timepoints%2 == 0): #even
+        init = 0
+    else: #odd
+        init = 1
+    for i in range(init,num_backward):
+        list_inference_patches.append(all_slices[:,i:i+desired_timepoints,:,:,:,:])
+        if(num_timepoints%2==0): #even
+            indexes.append(i+1)
+        else:
+            indexes.append(i)
+    
+    sorted_indexes = np.argsort(indexes)
+    sorted_list_inference_patches = [list_inference_patches[k] for k in sorted_indexes]
+
+    return sorted_list_inference_patches
 
 
 
@@ -445,40 +476,45 @@ for case in test_images:
                                             mode = "l",
                                             num_timepoints=options['num_timepoints'])
 
+    inf_patches_sets = divide_inference_slices(infer_patches, options['num_timepoints'])
+
 
     batch_size = options['batch_size']
 
-    lesion_out = build_image(infer_patches, lesion_model, device, options['num_classes'], options)
+    for i_timepoint in range(len(inf_patches_sets)):
+        infer_patches = inf_patches_sets[i_timepoint]
 
-    scan_numpy = nib.load(jp(path_test, case, os.listdir(scan_path)[0])).get_fdata()
-    all_probs = np.zeros((scan_numpy.shape[0], scan_numpy.shape[1], scan_numpy.shape[2], options['num_classes']))
+        lesion_out = build_image(infer_patches, lesion_model, device, options['num_classes'], options)
 
-    for i in range(options['num_classes']):
-        all_probs[:,:,:,i] = reconstruct_image(lesion_out[:,i], 
-                                        coordenates, 
-                                        scan_numpy.shape)
+        scan_numpy = nib.load(jp(path_test, case, os.listdir(scan_path)[0])).get_fdata()
+        all_probs = np.zeros((scan_numpy.shape[0], scan_numpy.shape[1], scan_numpy.shape[2], options['num_classes']))
+
+        for i in range(options['num_classes']):
+            all_probs[:,:,:,i] = reconstruct_image(lesion_out[:,i], 
+                                            coordenates, 
+                                            scan_numpy.shape)
                                 
-    labels = np.argmax(all_probs, axis=3).astype(np.uint8)
+        labels = np.argmax(all_probs, axis=3).astype(np.uint8)
 
-    #shim_overlay(scan_numpy, labels, 16, alpha=0.6)
+        #shim_overlay(scan_numpy, labels, 16, alpha=0.6)
 
-    #Compute metrics
-    list_gt = get_dictionary_with_paths([case], path_test, options["gt"])[case]
+        #Compute metrics
+        list_gt = get_dictionary_with_paths([case], path_test, options["gt"])[case]
 
-    labels_gt = nib.load(list_gt[-2][0]).get_fdata().astype(np.uint8)  #GT  
+        labels_gt = nib.load(list_gt[i_timepoint][0]).get_fdata().astype(np.uint8)  #GT  
 
-    #DSC
-    dsc = compute_dices(labels_gt.flatten(), labels.flatten())
-    hd = compute_hausdorf(labels_gt, labels.astype(np.uint8))
+        #DSC
+        dsc = compute_dices(labels_gt.flatten(), labels.flatten())
+        hd = compute_hausdorf(labels_gt, labels.astype(np.uint8))
 
-    df.loc[i_row] = [case, dsc[0], hd[0]]
-    i_row += 1
-    #Save result
-    img_nib = nib.Nifti1Image(labels, np.eye(4))
-    create_folder(jp(path_segmentations, case))
-    nib.save(img_nib, jp(path_segmentations, case, case+"_segm.nii.gz"))
+        df.loc[i_row] = [case, dsc[0], hd[0]]
+        i_row += 1
+        #Save result
+        img_nib = nib.Nifti1Image(labels, np.eye(4))
+        create_folder(jp(path_segmentations, case))
+        nib.save(img_nib, jp(path_segmentations, case, case+"_"+ str(i_timepoint+1).zfill(2) +"_segm.nii.gz"))
 
-    cnt += 1
+        cnt += 1
 
 df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
 print(df.mean())
