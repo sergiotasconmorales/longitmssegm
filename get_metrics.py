@@ -6,7 +6,7 @@ import nibabel as nib
 from ms_segmentation.general.general import list_folders, list_files_with_name_containing
 from ms_segmentation.evaluation.metrics import compute_metrics
 
-experiment_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation\CROSS_VALIDATION_unet2dconvLSTM_2020-04-14_23_59_18[t2 added]'
+experiment_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation\CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
 gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\isbi_train'
 gt_name = 'mask1'
 patients = list_folders(gt_folder)

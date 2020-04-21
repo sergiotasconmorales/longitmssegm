@@ -69,9 +69,9 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvGRU3D")
 
-
-fold = 0
-for curr_test_patient in all_patients:
+experiment_name = 'CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
+fold = 1
+for curr_test_patient in all_patients[1:]:
     fold += 1
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
@@ -97,7 +97,7 @@ for curr_test_patient in all_patients:
 
     transf = transforms.ToTensor()
 
-
+    
 
     print('Training data: ')
     training_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_train_data'],
@@ -132,7 +132,7 @@ for curr_test_patient in all_patients:
                                     batch_size=options['batch_size'],
                                     shuffle=True)
 
-
+    
 
     #Get frequency of each label
     if(options['loss'] == 'cross-entropy'):
@@ -445,9 +445,10 @@ for curr_test_patient in all_patients:
     columns = ['Case','DSC','HD']
     df = pd.DataFrame(columns = columns)
 
-    test_images = list_folders(path_test)
+    test_images = [curr_test_patient]
     i_row=0
     cnt=0
+    path_test = options['test_path']
     for case in test_images:
         print(cnt+1, "/", len(test_images))
         scan_path = jp(path_test, case)
