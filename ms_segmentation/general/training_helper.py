@@ -316,47 +316,56 @@ def soft_dice_loss(y_true, y_pred, epsilon=1e-6):
     return 1 - np.mean(numerator / (denominator + epsilon)) # average over classes and batch
 
 
-def tversky_loss(true, logits, alpha, beta, cl_weights=1, eps=1e-7):
+def tversky_loss2D(input, target, alpha, beta):
     """Computes the Tversky loss [1].
-    Args:
-        true: a tensor of shape [B, H, W] or [B, 1, H, W].
-        logits: a tensor of shape [B, C, H, W]. Corresponds to
-            the raw output or logits of the model.
-        alpha: controls the penalty for false positives.
-        beta: controls the penalty for false negatives.
-        eps: added to the denominator for numerical stability.
-    Returns:
-        tversky_loss: the Tversky loss.
-    Notes:
-        alpha = beta = 0.5 => dice coeff
-        alpha = beta = 1 => tanimoto coeff
-        alpha + beta = 1 => F beta coeff
-    References:
-        [1]: https://arxiv.org/abs/1706.05721
+
     """
-    num_classes = logits.shape[1]
-    if num_classes == 1:
-        true_1_hot = torch.eye(num_classes + 1)[true.squeeze(1)]
-        true_1_hot = true_1_hot.permute(0, 3, 1, 2).float()
-        true_1_hot_f = true_1_hot[:, 0:1, :, :]
-        true_1_hot_s = true_1_hot[:, 1:2, :, :]
-        true_1_hot = torch.cat([true_1_hot_s, true_1_hot_f], dim=1)
-        pos_prob = torch.sigmoid(logits)
-        neg_prob = 1 - pos_prob
-        probas = torch.cat([pos_prob, neg_prob], dim=1)
-    else:
-        true_1_hot = torch.eye(num_classes)[true.squeeze(1)]
-        true_1_hot = true_1_hot.permute(0, 4, 1, 2, 3).float()
-        probas = F.softmax(logits, dim=1)
-    true_1_hot = true_1_hot.type(logits.type())
-    dims = (0,) + tuple(range(2, true.ndimension()))
-    intersection = torch.sum(probas * true_1_hot, dims)
-    fps = torch.sum(probas * (1 - true_1_hot), dims)
-    fns = torch.sum((1 - probas) * true_1_hot, dims)
-    num = intersection
-    denom = intersection + (alpha * fps) + (beta * fns)
+    assert input.size() == target.size(), "Input sizes must be equal."
+    assert input.dim() == 4, "Input must be a 4D Tensor [B, C, H, W]"
+
+    probs=F.softmax(input, dim=1)
+    num=probs*target#b,c,h,w--p*g
+    num=torch.sum(num,dim=3)#b,c,h
+    num=torch.sum(num,dim=2) # b, c
+
+    den1 = probs * (1 - target) #FPs
+    den1 = torch.sum(den1, dim=3)
+    den1 = torch.sum(den1,dim=2)
     
-    tversky_loss = (num / (denom + eps)) #.mean()
-    cl_weights = cl_weights/torch.sum(cl_weights)
-    balanced_tversky_loss = tversky_loss * cl_weights
-    return (1 - balanced_tversky_loss.sum())
+    den2 = (1 - probs) * target
+    den2 = torch.sum(den2, dim=3)
+    den2 = torch.sum(den2, dim=2)
+
+    tversky = num/(num+alpha*den1 + beta*den2)
+    tversky_eso = tversky[:,1:]
+    tversky_total = -1*torch.sum(tversky_eso)/tversky_eso.size(0) # Divide by batch size
+
+    return tversky_total
+
+
+def tversky_loss3D(input, target, alpha, beta):
+    assert input.size() == target.size(), "Input sizes must be equal."
+    assert input.dim() == 5, "Input must be a 5D Tensor [B, C, H, W, D]"
+
+    probs=F.softmax(input, dim=1)
+    num=probs*target#b,c,h,w--p*g
+    num=torch.sum(num,dim=4)#b,c,h,w
+    num=torch.sum(num,dim=3) # b,c,h
+    num=torch.sum(num,dim=2) # b,c
+
+    den1 = probs * (1 - target) #FPs
+    den1 = torch.sum(den1, dim=4)
+    den1 = torch.sum(den1,dim=3)
+    den1 = torch.sum(den1,dim=2)
+    
+    den2 = (1 - probs) * target
+    den2 = torch.sum(den2, dim=4)
+    den2 = torch.sum(den2, dim=3)
+    den2 = torch.sum(den2, dim=2)
+
+    tversky = num/(num+alpha*den1 + beta*den2)
+    tversky_eso = tversky[:,1:]
+    tversky_total = -1*torch.sum(tversky_eso)/tversky_eso.size(0) # Divide by batch size
+
+    return tversky_total
+    return 0

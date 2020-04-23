@@ -22,14 +22,14 @@ from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim
 from medpy.io import load
 from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku, UNet_ConvLSTM_Vegeta
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
 import torchvision.transforms as transforms
-from ms_segmentation.general.training_helper import EarlyStopping, exp_lr_scheduler, dice_loss_2d, create_training_validation_sets
+from ms_segmentation.general.training_helper import EarlyStopping, exp_lr_scheduler, dice_loss_2d, create_training_validation_sets, tversky_loss2D
 from sklearn.metrics import jaccard_score as jsc
-from ms_segmentation.evaluation.metrics import compute_dices, compute_hausdorf
+from ms_segmentation.evaluation.metrics import compute_metrics
 
 
 path_data = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L'
@@ -86,8 +86,7 @@ options['optimizer'] = 'adam'
 # Patch sampling type
 options['patch_sampling'] = 'mask' # (mask, balanced or balanced+roi or non-uniform)
 # Loss
-options['loss'] = 'dice' # (dice, cross-entropy)
-# Whether or not to re-sample each epoch for training patches
+options['loss'] = 'tversky' # (dice, cross-entropy, tversky)
 options['resample_each_epoch'] = False
 options['num_timepoints'] = 3
 
@@ -249,12 +248,15 @@ try:
                 if options['loss']=='dice':
                     y_one_hot = pred.data.clone()
                     y_one_hot[...] = 0
-                    #y_one_hot = torch.FloatTensor(x.size(0), 2, x.size(2), x.size(3))
-                    #y_one_hot = y_one_hot.to(device)
                     y_one_hot.scatter_(1,y.type(torch.LongTensor).to(device),1)
-                    #y_one_hot.scatter_(1,y.unsqueeze(1).type(torch.LongTensor).to(device),1)
-
                     loss = dice_loss_2d(torch.log(torch.clamp(pred, 1E-7, 1.0)), y_one_hot)
+
+                elif options['loss'] == 'tversky':
+                    y_one_hot = pred.data.clone()
+                    y_one_hot[...] = 0
+                    y_one_hot.scatter_(1,y.type(torch.LongTensor).to(device),1)
+                    loss = tversky_loss2D(torch.log(torch.clamp(pred, 1E-7, 1.0)), y_one_hot, 0.4, 0.6)
+
                 elif options['loss'] == 'cross-entropy':
                     loss = F.cross_entropy(torch.log(torch.clamp(pred, 1E-7, 1.0)),
                                         y.squeeze(dim=1).long(), weight=class_weights)
@@ -302,12 +304,16 @@ try:
                     if options['loss']=='dice':
                         y_one_hot = pred.data.clone()
                         y_one_hot[...] = 0
-                        #y_one_hot = torch.FloatTensor(x.size(0), 2, x.size(2), x.size(3))
-                        #y_one_hot = y_one_hot.to(device)
                         y_one_hot.scatter_(1,y.type(torch.LongTensor).to(device),1)
-
-
                         loss = dice_loss_2d(torch.log(torch.clamp(pred, 1E-7, 1.0)), y_one_hot)
+
+                    elif options['loss'] == 'tversky':
+                        y_one_hot = pred.data.clone()
+                        y_one_hot[...] = 0
+                        y_one_hot.scatter_(1,y.type(torch.LongTensor).to(device),1)
+                        loss = tversky_loss2D(torch.log(torch.clamp(pred, 1E-7, 1.0)), y_one_hot, 0.3, 0.7)
+
+
                     elif options['loss'] == 'cross-entropy':
                         loss = F.cross_entropy(torch.log(torch.clamp(pred, 1E-7, 1.0)),
                                         y.squeeze(dim=1).long(), weight=class_weights)
@@ -419,7 +425,7 @@ def divide_inference_slices(all_slices, desired_timepoints):
 
 
 #Evaluate all images
-columns = ['Case','DSC','HD']
+columns = compute_metrics(None, None, labels_only=True)
 df = pd.DataFrame(columns = columns)
 
 test_images = list_folders(path_test)
@@ -452,10 +458,9 @@ for case in test_images:
         labels = undo_crop_images(full_image, labels, (160,200))
 
         #DSC
-        dsc = compute_dices(labels_gt.flatten(), labels.flatten())
-        hd = compute_hausdorf(labels_gt, labels.astype(np.uint8))
+        metrics = compute_metrics(labels_gt, labels)
 
-        df.loc[i_row] = [case, dsc[0], hd[0]]
+        df.loc[i_row] = list(metrics.values())
         i_row += 1
         #Save result
         img_nib = nib.Nifti1Image(labels, np.eye(4))
@@ -464,6 +469,7 @@ for case in test_images:
 
         cnt += 1
 
+df[cnt] = list(df.mean()) # Last row is average of previous rows
 df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
 print(df.mean())
 create_log(path_results, options)
