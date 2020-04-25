@@ -324,7 +324,7 @@ def tversky_loss2D(input, target, alpha, beta):
     assert input.dim() == 4, "Input must be a 4D Tensor [B, C, H, W]"
 
     probs=F.softmax(input, dim=1)
-    num=probs*target#b,c,h,w--p*g
+    num=probs*target#b,c,h,w--p*g       
     num=torch.sum(num,dim=3)#b,c,h
     num=torch.sum(num,dim=2) # b, c
 

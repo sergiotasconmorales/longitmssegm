@@ -20,9 +20,9 @@ from ms_segmentation.general.general import create_folder, list_folders, get_exp
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
-from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images
+from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images,RandomHorizontalFlipSlice, RandomRotationSlice, ToTensorSlice
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku, UNet_ConvLSTM_Vegeta
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
@@ -89,8 +89,10 @@ for curr_test_patient in all_patients:
     # Organize the data in a dictionary 
     input_dictionary = create_training_validation_sets(options, dataset_mode='l')
     
-
-    transf = transforms.ToTensor()
+    #Transformation for data augmentation
+    transf = transforms.Compose([   RandomHorizontalFlipSlice(),
+                                    RandomRotationSlice(5),
+                                    ToTensorSlice()])
 
     
 
@@ -101,7 +103,8 @@ for curr_test_patient in all_patients:
                                         num_timepoints=options['num_timepoints'],
                                         normalize=options['normalize'],
                                         norm_type=options['norm_type'],
-                                        out_size = (160,200))
+                                        out_size = (160,200),
+                                        transform = transf)
 
 
     hola = training_dataset.__getitem__(100)
@@ -119,7 +122,8 @@ for curr_test_patient in all_patients:
                                             num_timepoints=options['num_timepoints'],
                                             normalize=options['normalize'],
                                             norm_type=options['norm_type'],
-                                            out_size = (160,200))
+                                            out_size = (160,200),
+                                            transform = transf)
 
     validation_dataloader = DataLoader(validation_dataset, 
                                     batch_size=options['batch_size'],

@@ -20,7 +20,9 @@ from ms_segmentation.general.general import create_folder, list_folders, save_im
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
-from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DTime, PatchLoader3DTime_alt, PatchLoader3DTime_alt_all, PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
+from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime, PatchLoader3DTime_alt, PatchLoader3DTime_alt_all, PatchLoader3DLoadAll, \
+                                                            build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
+                                                                RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import Unet_orig, UNet3D_1, UNet3D_2
 from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvGRU_3D_alt
 from torch.utils.data import DataLoader
@@ -69,9 +71,9 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvGRU3D")
 
-experiment_name = 'CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
+#experiment_name = 'CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
 fold = 1
-for curr_test_patient in all_patients[1:]:
+for curr_test_patient in all_patients:
     fold += 1
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
@@ -95,9 +97,16 @@ for curr_test_patient in all_patients[1:]:
 
     # Create training, validation and test patches
 
-    transf = transforms.ToTensor()
+    rotation_angle=5
+    transf = transforms.Compose([   RandomFlipX(),
+                                    RandomFlipY(),
+                                    RandomFlipZ(),
+                                    #RandomRotationXY(rotation_angle),
+                                    #RandomRotationYZ(rotation_angle),
+                                    #RandomRotationXZ(rotation_angle),
+                                    ToTensor3DPatch()
+                                ])
 
-    
 
     print('Training data: ')
     training_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_train_data'],

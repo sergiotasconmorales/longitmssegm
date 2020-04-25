@@ -20,7 +20,7 @@ from ms_segmentation.general.general import create_folder, list_folders, save_im
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
-from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DTime, PatchLoader3DTime_alt, PatchLoader3DTime_alt_all, PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
+from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DTime, PatchLoader3DTime_alt, PatchLoader3DTime_alt_all, PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, ToTensor3DPatch
 from ms_segmentation.architectures.unet3d import Unet_orig, UNet3D_1, UNet3D_2
 from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvGRU_3D_alt
 from torch.utils.data import DataLoader
@@ -109,8 +109,15 @@ input_dictionary = create_training_validation_sets(options, dataset_mode="l")
 
 # Create training, validation and test patches
 
-transf = transforms.ToTensor()
-
+rotation_angle=5
+transf = transforms.Compose([   RandomFlipX(),
+                                RandomFlipY(),
+                                RandomFlipZ(),
+                                #RandomRotationXY(rotation_angle),
+                                #RandomRotationYZ(rotation_angle),
+                                #RandomRotationXZ(rotation_angle),
+                                ToTensor3DPatch()
+                            ])
 
 
 print('Training data: ')
@@ -123,7 +130,8 @@ training_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_
                                        norm_type=options['norm_type'],
                                        sampling_type=options['patch_sampling'],
                                        resample_epoch=options['resample_each_epoch'],
-                                       num_timepoints = options['num_timepoints'])
+                                       num_timepoints = options['num_timepoints'],
+                                       transform=transf)
 
 #hola = training_dataset.__getitem__(2200)
 
@@ -140,7 +148,8 @@ validation_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['inpu
                                         normalize=options['normalize'],
                                         norm_type=options['norm_type'],
                                         sampling_type=options['patch_sampling'],
-                                        num_timepoints = options['num_timepoints'])
+                                        num_timepoints = options['num_timepoints'],
+                                        transform=transf)
 
 validation_dataloader = DataLoader(validation_dataset, 
                                    batch_size=options['batch_size'],
