@@ -20,7 +20,7 @@ from ms_segmentation.general.general import create_folder, list_folders, get_exp
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
-from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images
+from ms_segmentation.data_generation.slice_manager import SlicesGroupLoaderTimeLoadAll, SlicesLoader, get_inference_slices, get_inference_slices_time, get_probs, undo_crop_images, RandomHorizontalFlipSlice, RandomRotationSlice, ToTensorSlice
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image
 from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_2D_alt, UNet_ConvLSTM_2D_alt, UNet_ConvLSTM_Goku
 from torch.utils.data import DataLoader
@@ -86,7 +86,7 @@ options['optimizer'] = 'adam'
 # Patch sampling type
 options['patch_sampling'] = 'mask' # (mask, balanced or balanced+roi or non-uniform)
 # Loss
-options['loss'] = 'tversky' # (dice, cross-entropy, tversky)
+options['loss'] = 'dice' # (dice, cross-entropy, tversky)
 options['resample_each_epoch'] = False
 options['num_timepoints'] = 3
 
@@ -101,7 +101,10 @@ input_dictionary = create_training_validation_sets(options, dataset_mode='l')
 
 # Create training, validation and test patches
 
-transf = transforms.ToTensor()
+transf = transforms.Compose([   RandomHorizontalFlipSlice(),
+                                RandomRotationSlice(5),
+                                ToTensorSlice()])
+
 
 
 
@@ -112,7 +115,8 @@ training_dataset = SlicesGroupLoaderTimeLoadAll(input_data=input_dictionary['inp
                                        num_timepoints=options['num_timepoints'],
                                        normalize=options['normalize'],
                                        norm_type=options['norm_type'],
-                                       out_size = (160,200))
+                                       out_size = (160,200),
+                                       transform = transf)
 
 
 hola = training_dataset.__getitem__(100)
@@ -130,7 +134,8 @@ validation_dataset = SlicesGroupLoaderTimeLoadAll(input_data=input_dictionary['i
                                         num_timepoints=options['num_timepoints'],
                                         normalize=options['normalize'],
                                         norm_type=options['norm_type'],
-                                        out_size = (160,200))
+                                        out_size = (160,200),
+                                        transform = transf)
 
 validation_dataloader = DataLoader(validation_dataset, 
                                    batch_size=options['batch_size'],
@@ -469,7 +474,7 @@ for case in test_images:
 
         cnt += 1
 
-df[cnt] = list(df.mean()) # Last row is average of previous rows
+df.loc[i_row] = list(df.mean()) # Last row is average of previous rows
 df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
 print(df.mean())
 create_log(path_results, options)

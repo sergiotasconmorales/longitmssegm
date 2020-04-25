@@ -2,6 +2,8 @@ import os
 import nibabel as nib
 import numpy as np
 import torch
+import random 
+from scipy import ndimage
 from os.path import join as jp
 from torch.utils.data import Dataset
 from operator import add 
@@ -510,20 +512,6 @@ class PatchLoader3DLoadAll(Dataset):
             training_indexes += [(i, tuple(v)) for v in voxel_coords]
 
         print("Total number of patches:", len(training_indexes))
-
-
-        # for s, l, r, i in zip(self.input_scans,
-        #                       self.label_scans,
-        #                       roi_scans,
-        #                       range(len(self.input_scans))):
-
-        #     # sample candidates
-        #     candidate_voxels = self.get_candidate_voxels(s[0], l[0], r[0])
-        #     voxel_coords = get_voxel_coordenates(s[0],
-        #                                          candidate_voxels,
-        #                                          step_size=self.sampling_step,
-        #                                          random_pad=self.random_pad)
-        #     training_indexes += [(i, tuple(v)) for v in voxel_coords]
 
         return training_indexes
 
@@ -1223,7 +1211,141 @@ class PatchLoader3DTime_alt(Dataset):
         return sampled_mask
 
 
+class RandomFlipX(object):
+    """Flip 3D patch and labels in X direction.
 
+    Parameters:
+    p:  float
+        probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        if random.random() < self.p:
+            return np.flip(image, axis = -3).copy(), np.flip(labels, axis = -3).copy() #Flip around first 3D axis
+        return img
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+class RandomFlipY(object):
+    """Flip 3D patch and labels in Y direction.
+
+    Parameters:
+    p:  float
+        probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        if random.random() < self.p:
+            return np.flip(image, axis = -2).copy(), np.flip(labels, axis = -2).copy() #Flip around second 3D axis
+        return img
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+class RandomFlipZ(object):
+    """Flip 3D patch and labels in Z direction.
+
+    Parameters:
+    p:  float
+        probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        if random.random() < self.p:
+            return np.flip(image, axis = -1).copy(), np.flip(labels, axis = -1).copy() #Flip around third 3D axis
+        return img
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+class RandomRotationXY(object):
+
+
+    def __init__(self, degrees, p=0.5):
+        self.degrees = (-degrees, degrees)
+        self.p = p
+
+    @staticmethod
+    def get_angle(degrees):
+        angle = random.uniform(degrees[0], degrees[1])
+        return angle
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        
+        if random.random() < self.p:
+            angle = self.get_angle(self.degrees)
+            return ndimage.rotate(image, angle, axes = (-3,-2), reshape=False), ndimage.rotate(labels, angle, axes = (-3,-2), reshape=False)
+        return img
+
+
+class RandomRotationYZ(object):
+
+
+    def __init__(self, degrees, p=0.5):
+        self.degrees = (-degrees, degrees)
+        self.p = p
+
+    @staticmethod
+    def get_angle(degrees):
+        angle = random.uniform(degrees[0], degrees[1])
+        return angle
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        
+        if random.random() < self.p:
+            angle = self.get_angle(self.degrees)
+            return ndimage.rotate(image, angle, axes = (-2,-1), reshape=False), ndimage.rotate(labels, angle, axes = (-2,-1), reshape=False)
+        return img
+
+class RandomRotationXZ(object):
+
+
+    def __init__(self, degrees, p=0.5):
+        self.degrees = (-degrees, degrees)
+        self.p = p
+
+    @staticmethod
+    def get_angle(degrees):
+        angle = random.uniform(degrees[0], degrees[1])
+        return angle
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        
+        if random.random() < self.p:
+            angle = self.get_angle(self.degrees)
+            return ndimage.rotate(image, angle, axes = (-3,-1), reshape=False), ndimage.rotate(labels, angle, axes = (-3,-1), reshape=False)
+        return img
+
+
+class ToTensor3DPatch(object):
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+
+        return torch.Tensor(image), torch.Tensor(labels)
 
 class PatchLoader3DTime_alt_all(Dataset):
     """
@@ -1307,9 +1429,15 @@ class PatchLoader3DTime_alt_all(Dataset):
 
         if idx == 0 and self.resample_epoch:
             self.patch_indexes = self.generate_patch_indexes()
+            self.all_patches, self.all_labels = self.load_all_patches()
+        
+        patches = self.all_patches[idx, :, :, :, :, :]
+        labels = self.all_labels[idx, :, np.newaxis,:,:,:]
 
+        if self.transform:
+            patches, labels = self.transform((patches, labels))
 
-        return self.all_patches[idx, :, :, :, :, :], self.all_labels[idx, :, np.newaxis,:,:,:]
+        return patches, labels
             
 
     def load_all_patches(self):

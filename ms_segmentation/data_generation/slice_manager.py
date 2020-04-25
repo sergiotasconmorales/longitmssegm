@@ -3,10 +3,12 @@ import torch
 import random
 import nibabel as nib
 import numpy as np
+from scipy import ndimage
 from .patch_manager_2d import normalize_data
 from torch.utils.data import Dataset
 from ..general.general import list_folders, cls, get_dictionary_with_paths
 from os.path import join as jp
+from torchvision.transforms import functional as F
 
 
 
@@ -480,7 +482,63 @@ class SlicesGroupLoaderTime(Dataset):
                 break
         return lower_limit, upper_limit
 
+class RandomHorizontalFlipSlice(object):
+    """Horizontally flip the slices and their corresponding labels.
 
+    Parameters:
+    p:  float
+        probability of the image being flipped. Default value is 0.5
+    """
+
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img):
+        """
+        Parameters:
+            img
+            Tuple with (images, labels) where images and labels are numpy arrays.
+
+        Returns:
+            Transformed images and labels (if probability determines it)
+        """
+        image = img[0]
+        labels = img[1]
+        if random.random() < self.p:
+            return np.flip(image, axis = -2).copy(), np.flip(labels, axis = -2).copy() #Flip around last axis (width axis)
+        return img
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
+class RandomRotationSlice(object):
+
+
+    def __init__(self, degrees, p=0.5):
+        self.degrees = (-degrees, degrees)
+        self.p = p
+
+    @staticmethod
+    def get_angle(degrees):
+        angle = random.uniform(degrees[0], degrees[1])
+        return angle
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+        
+        if random.random() < self.p:
+            angle = self.get_angle(self.degrees)
+            return ndimage.rotate(image, angle,axes = (-2,-1), reshape=False), ndimage.rotate(labels, angle, axes = (-2,-1), reshape=False)
+        return img
+
+class ToTensorSlice(object):
+
+    def __call__(self, img):
+        image = img[0]
+        labels = img[1]
+
+        return torch.Tensor(image), torch.Tensor(labels)
 
 class SlicesGroupLoaderTimeLoadAll(Dataset):
     """Slices group in terms of temporal context"""
@@ -514,8 +572,11 @@ class SlicesGroupLoaderTimeLoadAll(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-
-        return self.all_patches[idx], self.all_labels[idx]
+        patches = self.all_patches[idx]
+        labels = self.all_labels[idx]
+        if self.transform:
+            patches, labels = self.transform((patches, labels))
+        return patches, labels
 
     def load_all_patches(self):
         
