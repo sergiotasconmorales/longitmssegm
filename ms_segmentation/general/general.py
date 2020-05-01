@@ -214,6 +214,16 @@ def get_dictionary_with_paths(scans, the_path, the_names):
                 d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
     return d
 
+def get_dictionary_with_paths_cs(patients, the_path, the_names):
+    
+    d = {}
+    for patient in patients:
+        d[patient] = []
+        timepoints = list_folders(jp(the_path, patient))
+        d[patient] = [[jp(the_path, patient, tp, image) for image in the_names] for tp in timepoints] 
+
+    return d
+
 def print_line():
     """ Function to print a line in the console
     """

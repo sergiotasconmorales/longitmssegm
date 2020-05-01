@@ -15,7 +15,7 @@ import random
 import numpy as np
 from os.path import join as jp
 import torch.nn.functional as F
-from .general import list_files_with_name_containing, filter_list, get_dictionary_with_paths
+from .general import list_files_with_name_containing, filter_list, get_dictionary_with_paths, get_dictionary_with_paths_cs
 
 
 class EarlyStopping:
@@ -130,35 +130,17 @@ def create_training_validation_sets(options, dataset_mode="cs"):
 
     if dataset_mode == "cs":
 
-        input_dictionary['input_train_data'] = {scan: [os.path.join(options['training_path'], scan, d)
-                                                                    for d in options['input_data']]
-                                                                    for scan in training_data}
+        input_dictionary['input_train_data'] = get_dictionary_with_paths_cs(training_data, options['training_path'],options['input_data'])
+        input_dictionary['input_train_labels'] = get_dictionary_with_paths_cs(training_data, options['training_path'], [options['gt']])
+        input_dictionary['input_train_rois'] = get_dictionary_with_paths_cs(training_data, options['training_path'], [options['brain_mask']])
 
-        input_dictionary['input_train_labels'] = {scan: [os.path.join(options['training_path'], scan, options['gt'])]
-                                                                    for scan in training_data}
+        input_dictionary['input_val_data'] = get_dictionary_with_paths_cs(validation_data, options['training_path'],options['input_data'])
+        input_dictionary['input_val_labels'] = get_dictionary_with_paths_cs(validation_data, options['training_path'], [options['gt']])
+        input_dictionary['input_val_rois'] = get_dictionary_with_paths_cs(validation_data, options['training_path'], [options['brain_mask']])
 
-        input_dictionary['input_train_rois'] = {scan: [os.path.join(options['training_path'], scan, options['brain_mask'])]
-                                                                    for scan in training_data}
-
-        input_dictionary['input_val_data'] =  {scan: [os.path.join(options['training_path'], scan, d)
-                                                                    for d in options['input_data']]
-                                                                    for scan in validation_data}
-
-        input_dictionary['input_val_labels'] = {scan: [os.path.join(options['training_path'], scan, options['gt'])]
-                                                                    for scan in validation_data}
-
-        input_dictionary['input_val_rois'] = {scan: [os.path.join(options['training_path'], scan, options['brain_mask'])]
-                                                                    for scan in validation_data}
-
-        input_dictionary['input_test_data'] = {scan: [os.path.join(options['test_path'], scan, d)
-                                                                    for d in options['input_data']]
-                                                                    for scan in test_scans}
-
-        input_dictionary['input_test_labels'] = {scan: [os.path.join(options['test_path'], scan, options['gt'])]
-                                                                    for scan in test_scans}
-
-        input_dictionary['input_test_rois'] = {scan: [os.path.join(options['test_path'], scan, options['brain_mask'])]
-                                                                    for scan in test_scans}
+        input_dictionary['input_test_data'] = get_dictionary_with_paths_cs(test_scans, options['test_path'],options['input_data'])
+        input_dictionary['input_test_labels'] = get_dictionary_with_paths_cs(test_scans, options['test_path'], [options['gt']])
+        input_dictionary['input_test_rois'] = get_dictionary_with_paths_cs(test_scans, options['test_path'], [options['brain_mask']])
 
     else: #If longitudinal data, load several images for each case
         #Training

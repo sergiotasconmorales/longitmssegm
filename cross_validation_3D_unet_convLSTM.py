@@ -20,7 +20,7 @@ from ms_segmentation.general.general import create_folder, list_folders, save_im
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
-from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime, PatchLoader3DTime_alt, PatchLoader3DTime_alt_all, PatchLoader3DLoadAll, \
+from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime, PatchLoader3DTimeLoadAll, PatchLoader3DLoadAll, \
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import Unet_orig, UNet3D_1, UNet3D_2
@@ -107,9 +107,9 @@ for curr_test_patient in all_patients:
                                     ToTensor3DPatch()
                                 ])
 
-
+    
     print('Training data: ')
-    training_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_train_data'],
+    training_dataset = PatchLoader3DTimeLoadAll(input_data=input_dictionary['input_train_data'],
                                         labels=input_dictionary['input_train_labels'],
                                         rois=input_dictionary['input_train_rois'],
                                         patch_size=options['patch_size'],
@@ -127,7 +127,7 @@ for curr_test_patient in all_patients:
                                     shuffle=True)
 
     print('Validation data: ')
-    validation_dataset = PatchLoader3DTime_alt_all(input_data=input_dictionary['input_val_data'],
+    validation_dataset = PatchLoader3DTimeLoadAll(input_data=input_dictionary['input_val_data'],
                                             labels=input_dictionary['input_val_labels'],
                                             rois=input_dictionary['input_val_rois'],
                                             patch_size=options['patch_size'],
