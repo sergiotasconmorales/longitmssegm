@@ -8,7 +8,7 @@ from os.path import join as jp
 from torch.utils.data import Dataset
 from operator import add 
 from ..general.general import list_folders, list_files_with_name_containing, get_dictionary_with_paths 
-
+from .transforms3D import RandomFlipX, RandomFlipY, RandomFlipZ, RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch
 
 class PatchLoader3D(Dataset):
     """
@@ -614,305 +614,6 @@ class PatchLoader3DLoadAll(Dataset):
 class PatchLoader3DTime(Dataset):
     """
     Dataset class for loading MRI patches from multiple modalities. Based on script utils.py provided by Sergi Valverde. 
-
-    """
-
-    def __init__(self,
-                 input_data,
-                 labels,
-                 rois,
-                 patch_size,
-                 sampling_step,
-                 random_pad=(0, 0, 0),
-                 sampling_type='mask',
-                 normalize=False,
-                 norm_type='zero_one',
-                 min_sampling_th=0,
-                 num_pos_samples=5000,
-                 resample_epoch=False,
-                 transform=None,
-                 num_timepoints = 4):
-        """
-        Arguments:
-        - input_data: dict containing a list of inputs for each training scan
-        - labels: dict containing a list of labels for each training scan
-        - roi: dict containing a list of roi masks for each training scan
-        - patch_size: patch size
-        - sampling_step: sampling_step
-        - sampling type: 'all: all voxels in input_mask,
-                            'roi: all voxels in roi_mask,
-                            'balanced: same number of positive and negative voxels
-        - normalize: Normalize data (0 mean / 1 std)
-        - min_sampling_th: Minimum value to extract samples (0 default)
-        - num_pos_samples used when hybrid sampling
-        - transform
-        """
-        self.input_data = list(input_data.values())
-        self.input_labels = list(labels.values())
-        self.input_rois = list(rois.values())
-        self.pad_or_not = True
-        self.patch_size = patch_size
-        self.sampling_step = sampling_step
-        self.random_pad = random_pad
-        self.sampling_type = sampling_type
-        self.patch_half = tuple([idx // 2 for idx in self.patch_size])
-        self.normalize = normalize
-        self.norm_type = norm_type
-        self.min_th = min_sampling_th
-        self.resample_epoch = resample_epoch
-        self.transform = transform
-        self.num_pos_samples = num_pos_samples
-        self.prev_im_ = None
-        self.prev_input_data = None
-        self.prev_labels = None
-        self.num_timepoints = num_timepoints
-
-        #Check that number of images coincide 
-        if not len(input_data) == len(labels) == len(rois):
-            raise ValueError("Number of input samples, input labels and input rois does not coincide")
-
-        self.num_modalities = len(list(input_data.values())[0][0])
-        self.input_train_dim = (self.num_timepoints, self.num_modalities, ) + self.patch_size
-        self.input_label_dim = (self.num_timepoints, 1, ) + self.patch_size
-
-        self.patch_indexes = self.generate_patch_indexes()
-
-
-    def __len__(self):
-        """
-        Get the legnth of the training set
-        """
-        return len(self.patch_indexes)
-
-    def __getitem__(self, idx):
-        """
-        Get the next item. Resampling the entire dataset is considered if
-        self.resample_epoch is set to True.
-        """
-
-        if idx == 0 and self.resample_epoch:
-            self.patch_indexes = self.generate_patch_indexes()
-
-        im_ = self.patch_indexes[idx][0] #Patient
-        center = self.patch_indexes[idx][1]
-
-        slice_ = [slice(c_idx-p_idx, c_idx+s_idx-p_idx)
-                  for (c_idx, p_idx, s_idx) in zip(center,
-                                                   self.patch_half,
-                                                   self.patch_size)]
-
-        output_patch = np.zeros(self.input_train_dim, dtype = 'float32') #Array to store output patches
-        output_label = np.zeros(self.input_label_dim, dtype = 'float32') #Array to store output labels
-        for i_t in range(self.num_timepoints): #For each timepoint
-            #Read images -> Super slow, reads image for every patch
-            if self.pad_or_not:
-                s = [self.apply_padding(nib.load(
-                        self.input_data[im_][i_t][k]).get_data().astype('float32'))
-                                for k in range(self.num_modalities)]
-                l = [self.apply_padding(nib.load(
-                        self.input_labels[im_][i_t][0]).get_data().astype('float32'))]
-            else:
-                s = [nib.load(
-                        self.input_data[im_][i_t][k]).get_data().astype('float32')
-                                for k in range(self.num_modalities)]
-                l = [nib.load(
-                        self.input_labels[im_][i_t][0]).get_data().astype('float32')]
-
-            if self.normalize:
-                s = [normalize_data(s[m], norm_type = self.norm_type) for m in range(len(s))]
-
-            self.prev_input_data = s.copy()
-            self.prev_labels = l.copy()
-
-            # get current patches for both training data and labels
-            input_train = np.stack([s[m][tuple(slice_)]
-                                    for m in range(self.num_modalities)], axis=0)
-            input_label = np.expand_dims(
-                l[0][tuple(slice_)], axis=0)
-
-            # check dimensions and put zeros if necessary
-            if (self.num_timepoints,)+input_train.shape != self.input_train_dim:
-                print('error in patch', input_train.shape, self.input_train_dim)
-                input_train = np.zeros(self.input_train_dim).astype('float32')
-            if (self.num_timepoints,)+input_label.shape != self.input_label_dim:
-                print('error in label', input_label.shape, self.input_label_dim)
-                input_label = np.zeros(self.input_label_dim).astype('float32')
-
-            if self.transform:
-                input_train, input_label = self.transform([input_train,
-                                                        input_label])
-
-
-
-            output_patch[i_t,:,:,:] = input_train 
-            output_label[i_t,:,:,:] = input_label
-
-        return output_patch, output_label
-            
-
-    def apply_padding(self, input_data, mode='constant', value=0):
-        """
-        Apply padding to edges in order to avoid overflow
-
-        """
-        padding = tuple((idx, size-idx)
-                        for idx, size in zip(self.patch_half, self.patch_size))
-
-        padded_image = np.pad(input_data,
-                              padding,
-                              mode=mode,
-                              constant_values=value)
-        return padded_image
-
-    
-
-    def generate_patch_indexes(self):
-        """
-        Generate indexes to extract. Consider the sampling step and
-        a initial random padding
-        """
-        training_indexes = []
-        # patch_half = tuple([idx // 2 for idx in self.patch_size])
-
-        #TODO: Include information about case number (store dictionary instead of list in init)
-
-        for i in range(len(self.input_data)): # For each patient
-            #Padding
-            if self.pad_or_not:
-                s = [self.apply_padding(nib.load(
-                        self.input_data[i][0][k]).get_data().astype('float32')) #Take first timepoint as reference for the patches
-                              for k in range(self.num_modalities)]
-                l = [self.apply_padding(nib.load(
-                        self.input_labels[i][self.num_timepoints-1][0]).get_data().astype('float32'))] #Take GT of last timepoint
-                r = [self.apply_padding(nib.load(
-                        self.input_rois[i][self.num_timepoints-1][0]).get_data().astype('float32'))] #Take last brain mask 
-            #No pading
-            else:
-                s = [nib.load(
-                        self.input_data[i][0][k]).get_data().astype('float32')
-                              for k in range(self.num_modalities)]
-                l = [nib.load(
-                        self.input_labels[i][self.num_timepoints-1][0]).get_data().astype('float32')]
-                r = [nib.load(
-                        self.input_rois[i][self.num_timepoints-1][0]).get_data().astype('float32')]                
-
-
-            candidate_voxels = self.get_candidate_voxels(s[0], l[0], r[0]) #FLAIR, labels, brain mask
-            voxel_coords = get_voxel_coordenates(s[0],
-                                                 candidate_voxels,
-                                                 step_size=self.sampling_step,
-                                                 random_pad=self.random_pad)
-            training_indexes += [(i, tuple(v)) for v in voxel_coords]
-
-        print("Total number of patches:", len(training_indexes))
-
-
-        return training_indexes
-
-    def get_candidate_voxels(self, input_mask, label_mask, roi_mask):
-        """
-        Sample input mask using different techniques:
-        - all: extracts all voxels > 0 from the input_mask
-        - mask: extracts all roi voxels
-        - balanced: same number of positive and negative voxels from
-                    the input_mask as defined by the roi mask
-        - balanced+roi: same number of positive and negative voxels from
-                    the roi and label mask
-
-        - hybrid sampling:
-          1. Set a number of positive samples == self.pos_samples
-          2. Displace randomly its x, y, z position < self.patch_half
-          3. Get the same number of negative samples from the roi mask
-        """
-
-        if self.sampling_type == 'image':
-            sampled_mask = input_mask > 0
-
-        if self.sampling_type == 'all':
-            sampled_mask = input_mask > 0
-
-        if self.sampling_type == 'mask':
-            sampled_mask = roi_mask > 0
-
-        if self.sampling_type == 'balanced':
-            sampled_mask = label_mask > 0
-            num_positive = np.sum(label_mask > 0)
-            brain_voxels = np.stack(np.where(input_mask > self.min_th), axis=1)
-            for voxel in np.random.permutation(brain_voxels)[:num_positive]:
-                sampled_mask[voxel[0], voxel[1], voxel[2]] = 1
-
-        if self.sampling_type == 'balanced+roi':
-            sampled_mask = label_mask > 0
-            num_positive = np.sum(label_mask > 0)
-            roi_mask[label_mask == 1] = 0
-            brain_voxels = np.stack(np.where(roi_mask > 0), axis=1)
-            for voxel in np.random.permutation(brain_voxels)[:num_positive]:
-                sampled_mask[voxel[0], voxel[1], voxel[2]] = 1
-
-        if self.sampling_type == 'hybrid':
-            x, y, z = np.where(label_mask > 0)
-            number_of_samples = len(x)
-
-            # sample voxels randomly until size equals self.num_samples
-            if number_of_samples < self.num_pos_samples:
-                expand_interval = int(self.num_pos_samples / number_of_samples) + 1
-                x = np.repeat(x, expand_interval)
-                y = np.repeat(y, expand_interval)
-                z = np.repeat(z, expand_interval)
-
-            index_perm = np.random.permutation(range(len(x)))
-            x = x[index_perm][:self.num_pos_samples]
-            y = y[index_perm][:self.num_pos_samples]
-            z = z[index_perm][:self.num_pos_samples]
-
-            # randomize the voxel center
-            min_int_x = - self.patch_half[0] +1
-            max_int_x = self.patch_half[0] -1
-            min_int_y = - self.patch_half[1] +1
-            max_int_y = self.patch_half[1] -1
-            min_int_z = - self.patch_half[2] +1
-            max_int_z = self.patch_half[2] -1
-            x += np.random.randint(low=min_int_x,
-                                   high=max_int_x,
-                                    size=x.shape)
-            y += np.random.randint(low=min_int_y,
-                                   high=max_int_y,
-                                   size=y.shape)
-            z += np.random.randint(low=min_int_z,
-                                   high=max_int_z,
-                                   size=z.shape)
-
-            # check boundaries
-            x = np.maximum(self.patch_half[0], x)
-            x = np.minimum(label_mask.shape[0] - self.patch_half[0], x)
-            y = np.maximum(self.patch_half[1], y)
-            y = np.minimum(label_mask.shape[1] - self.patch_half[1], y)
-            z = np.maximum(self.patch_half[2], z)
-            z = np.minimum(label_mask.shape[2] - self.patch_half[2], z)
-
-            # assign the same number of positive and negative voxels
-            sampled_mask = np.zeros_like(label_mask)
-
-            # positive samples
-            for x_v, y_v, z_v in zip(x, y, z):
-                sampled_mask[x, y, z] = 1
-
-            # negative samples
-            brain_voxels = np.stack(np.where(roi_mask > 0), axis=1)
-            for voxel in np.random.permutation(brain_voxels)[:self.num_pos_samples]:
-                sampled_mask[voxel[0], voxel[1], voxel[2]] = 1
-
-        return sampled_mask
-
-
-
-
-
-
-
-class PatchLoader3DTime_alt(Dataset):
-    """
-    Dataset class for loading MRI patches from multiple modalities. Based on script utils.py provided by Sergi Valverde. 
     Difference with respect to PatchLoader3DTime: Timepoints are sliced so that more patches can be taken
 
     """
@@ -1211,143 +912,7 @@ class PatchLoader3DTime_alt(Dataset):
         return sampled_mask
 
 
-class RandomFlipX(object):
-    """Flip 3D patch and labels in X direction.
-
-    Parameters:
-    p:  float
-        probability of the image being flipped. Default value is 0.5
-    """
-
-    def __init__(self, p=0.5):
-        self.p = p
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        if random.random() < self.p:
-            return np.flip(image, axis = -3).copy(), np.flip(labels, axis = -3).copy() #Flip around first 3D axis
-        return img
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(p={})'.format(self.p)
-
-class RandomFlipY(object):
-    """Flip 3D patch and labels in Y direction.
-
-    Parameters:
-    p:  float
-        probability of the image being flipped. Default value is 0.5
-    """
-
-    def __init__(self, p=0.5):
-        self.p = p
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        if random.random() < self.p:
-            return np.flip(image, axis = -2).copy(), np.flip(labels, axis = -2).copy() #Flip around second 3D axis
-        return img
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(p={})'.format(self.p)
-
-class RandomFlipZ(object):
-    """Flip 3D patch and labels in Z direction.
-
-    Parameters:
-    p:  float
-        probability of the image being flipped. Default value is 0.5
-    """
-
-    def __init__(self, p=0.5):
-        self.p = p
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        if random.random() < self.p:
-            return np.flip(image, axis = -1).copy(), np.flip(labels, axis = -1).copy() #Flip around third 3D axis
-        return img
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(p={})'.format(self.p)
-
-class RandomRotationXY(object):
-
-
-    def __init__(self, degrees, p=0.5):
-        self.degrees = (-degrees, degrees)
-        self.p = p
-
-    @staticmethod
-    def get_angle(degrees):
-        angle = random.uniform(degrees[0], degrees[1])
-        return angle
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        
-        if random.random() < self.p:
-            angle = self.get_angle(self.degrees)
-            return ndimage.rotate(image, angle, axes = (-3,-2), reshape=False), ndimage.rotate(labels, angle, axes = (-3,-2), reshape=False)
-        return img
-
-
-class RandomRotationYZ(object):
-
-
-    def __init__(self, degrees, p=0.5):
-        self.degrees = (-degrees, degrees)
-        self.p = p
-
-    @staticmethod
-    def get_angle(degrees):
-        angle = random.uniform(degrees[0], degrees[1])
-        return angle
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        
-        if random.random() < self.p:
-            angle = self.get_angle(self.degrees)
-            return ndimage.rotate(image, angle, axes = (-2,-1), reshape=False), ndimage.rotate(labels, angle, axes = (-2,-1), reshape=False)
-        return img
-
-class RandomRotationXZ(object):
-
-
-    def __init__(self, degrees, p=0.5):
-        self.degrees = (-degrees, degrees)
-        self.p = p
-
-    @staticmethod
-    def get_angle(degrees):
-        angle = random.uniform(degrees[0], degrees[1])
-        return angle
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-        
-        if random.random() < self.p:
-            angle = self.get_angle(self.degrees)
-            return ndimage.rotate(image, angle, axes = (-3,-1), reshape=False), ndimage.rotate(labels, angle, axes = (-3,-1), reshape=False)
-        return img
-
-
-class ToTensor3DPatch(object):
-
-    def __call__(self, img):
-        image = img[0]
-        labels = img[1]
-
-        return torch.Tensor(image), torch.Tensor(labels)
-
-class PatchLoader3DTime_alt_all(Dataset):
+class PatchLoader3DTimeLoadAll(Dataset):
     """
     Dataset class for loading MRI patches from multiple modalities. Based on script utils.py provided by Sergi Valverde. 
     Difference with respect to PatchLoader3DTime: Timepoints are sliced so that more patches can be taken
@@ -1368,7 +933,8 @@ class PatchLoader3DTime_alt_all(Dataset):
                  num_pos_samples=5000,
                  resample_epoch=False,
                  transform=None,
-                 num_timepoints = 4):
+                 num_timepoints = 4,
+                 labels_mode = 'mask'): # 'mask' 'center' or 'lesion_patch'
         """
         Arguments:
         - input_data: dict containing a list of inputs for each training scan
@@ -1383,6 +949,10 @@ class PatchLoader3DTime_alt_all(Dataset):
         - min_sampling_th: Minimum value to extract samples (0 default)
         - num_pos_samples used when hybrid sampling
         - transform
+        - num_timepoints: Number of timepoints to be considered
+        - labels_mode: Type of label for the patches. If 'mask', the whole mask of the patch is returned
+                        if 'center', only the value of the center pixel is returned as label. If 'lesion_patch'
+                        then a label is returned which indicates whether or not the patch contains a lesion voxel.
         """
         self.input_data = input_data
         self.input_labels = labels
@@ -1403,6 +973,7 @@ class PatchLoader3DTime_alt_all(Dataset):
         self.prev_input_data = None
         self.prev_labels = None
         self.num_timepoints = num_timepoints
+        self.labels_mode = labels_mode #To decide what the GT of the patches is: "mask", "lesion_patch" (if patch contains lesion), or "TODO"
 
         #Check that number of images coincide 
         if not len(input_data) == len(labels) == len(rois):
@@ -1414,12 +985,14 @@ class PatchLoader3DTime_alt_all(Dataset):
 
         self.patch_indexes = self.generate_patch_indexes()
         self.all_patches, self.all_labels = self.load_all_patches()
+        if self.labels_mode == 'lesion_patch':
+            self.all_patches, self.all_labels = self.balance_data()
 
     def __len__(self):
         """
         Get the legnth of the training set
         """
-        return len(self.patch_indexes)
+        return len(self.all_patches)
 
     def __getitem__(self, idx):
         """
@@ -1432,17 +1005,37 @@ class PatchLoader3DTime_alt_all(Dataset):
             self.all_patches, self.all_labels = self.load_all_patches()
         
         patches = self.all_patches[idx, :, :, :, :, :]
-        labels = self.all_labels[idx, :, np.newaxis,:,:,:]
+        if self.labels_mode == 'lesion_patch':
+            labels = self.all_labels[idx]
+        else:
+            labels = self.all_labels[idx, :, np.newaxis,:,:,:]
 
         if self.transform:
-            patches, labels = self.transform((patches, labels))
+            if self.labels_mode:
+                patches = self.transform((patches))
+                labels = torch.Tensor(labels)
+            else:
+                patches, labels = self.transform((patches, labels))
 
         return patches, labels
             
 
+    def balance_data(self):
+        num_samples = len(self.all_labels)
+        num_pos = np.count_nonzero(self.all_labels)
+        num_neg = num_samples - num_pos
+        negative_indexes = np.where(self.all_labels == 0)[0]
+        random.shuffle(negative_indexes) #Shuffle samples
+        negative_indexes_to_remove = negative_indexes[:num_neg-num_pos] # Remove first num_neg-num_pos elements
+        return np.delete(self.all_patches, negative_indexes_to_remove, 0), np.delete(self.all_labels, negative_indexes_to_remove, 0)
+        
+
     def load_all_patches(self):
 
         all_patches = np.zeros((len(self.patch_indexes), self.num_timepoints, self.num_modalities, self.patch_size[0], self.patch_size[1], self.patch_size[2]), dtype='float32')
+        if self.labels_mode == 'lesion_patch':
+            output_labels = np.zeros((len(self.patch_indexes), ), dtype = np.uint8)
+
         all_labels = np.zeros((len(self.patch_indexes), self.num_timepoints, self.patch_size[0],self.patch_size[1],self.patch_size[2]), dtype=np.uint8)
         
         for idx in range(len(self.patch_indexes)):
@@ -1506,6 +1099,11 @@ class PatchLoader3DTime_alt_all(Dataset):
             all_patches[idx,:,:,:,:,:] = output_patch 
             all_labels[idx,:,:,:,:] = output_label[:,0,:,:,:]
 
+            if self.labels_mode == 'lesion_patch':
+                output_labels[idx] = int(np.any(all_labels[idx,-1,:,:,:]>0)) #If patch contains any positive voxel, return 1
+        
+        if self.labels_mode == 'lesion_patch':
+            return all_patches, output_labels        
         return all_patches, all_labels
 
     def apply_padding(self, input_data, mode='constant', value=0):
@@ -1531,8 +1129,6 @@ class PatchLoader3DTime_alt_all(Dataset):
         """
         training_indexes = []
         # patch_half = tuple([idx // 2 for idx in self.patch_size])
-
-        #TODO: Include information about case number (store dictionary instead of list in init)
 
         for patient_number,timepoints_list in self.input_data.items(): # For each patient
             
@@ -1667,9 +1263,6 @@ class PatchLoader3DTime_alt_all(Dataset):
                 sampled_mask[voxel[0], voxel[1], voxel[2]] = 1
 
         return sampled_mask
-
-
-
 
 
 
