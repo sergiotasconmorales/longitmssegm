@@ -247,7 +247,7 @@ def cls():
     """
     os.system('cls||clear')
 
-def save_image(the_array, the_path):
+def save_image(the_array, the_path, orientation="LPI"):
     """Function to save a numpy array as an image. Name and format are specified in <the_path>
     
     Parameters
@@ -257,7 +257,10 @@ def save_image(the_array, the_path):
     the_path : str
         Path where image should be saved (including image name and format)
     """
-    img_nib = nib.Nifti1Image(the_array, np.eye(4))
+    if orientation == "LPI":
+        img_nib = nib.Nifti1Image(the_array, np.eye(4))
+    elif orientation == "RAI":
+        img_nib = nib.Nifti1Image(the_array, np.array([[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1]]))
     nib.save(img_nib, the_path)
 
 def create_log(path_results, options, filename = "log.txt"):

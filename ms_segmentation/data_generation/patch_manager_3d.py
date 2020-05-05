@@ -339,9 +339,9 @@ class PatchLoader3DLoadAll(Dataset):
         - num_pos_samples used when hybrid sampling
         - transform
         """
-        self.input_data = list(input_data.values())
-        self.input_labels = list(labels.values())
-        self.input_rois = list(rois.values())
+        self.input_data = input_data
+        self.input_labels = labels
+        self.input_rois = rois
         self.pad_or_not = True
         self.patch_size = patch_size
         self.sampling_step = sampling_step
@@ -362,12 +362,12 @@ class PatchLoader3DLoadAll(Dataset):
         if not len(input_data) == len(labels) == len(rois):
             raise ValueError("Number of input samples, input labels and input rois does not coincide")
 
-        self.num_modalities = len(list(input_data.values())[0])
+        self.num_modalities = len(list(input_data.values())[0][0])
         self.input_train_dim = (self.num_modalities, ) + self.patch_size
         self.input_label_dim = (1, ) + self.patch_size
 
         self.patch_indexes = self.generate_patch_indexes()
-        self.all_patches = self.load_all_patches()
+        self.all_patches, self.all_labels = self.load_all_patches()
 
     def __len__(self):
         """
@@ -385,52 +385,48 @@ class PatchLoader3DLoadAll(Dataset):
             self.patch_indexes = self.generate_patch_indexes()
             self.all_patches = self.load_all_patches()
 
-        return self.all_patches[idx, :-1, :, :, :], self.all_patches[idx,-1,:,:,:][np.newaxis,:,:,:]
+        return self.all_patches[idx, :, :, :, :], self.all_labels[idx,:,:,:,:]
 
 
             
     def load_all_patches(self):
 
-        all_patches = np.zeros((len(self.patch_indexes), len(self.input_data[0]) + len(self.input_labels[0]), self.patch_size[0], self.patch_size[1], self.patch_size[2]), dtype='float32')
-
+        all_patches = np.zeros((len(self.patch_indexes), self.num_modalities, self.patch_size[0], self.patch_size[1], self.patch_size[2]), dtype='float32')
+        all_labels = np.zeros((len(self.patch_indexes), len(list(self.input_labels.values())[0][0]), self.patch_size[0], self.patch_size[1], self.patch_size[2]), dtype='float32')
+        prev_pat = None
+        prev_tp = None
         for idx in range(len(self.patch_indexes)):
             print(idx, "/", len(self.patch_indexes))
 
-            im_ = self.patch_indexes[idx][0]
-            center = self.patch_indexes[idx][1]
+            im_ = self.patch_indexes[idx][0] # patient number
+            tp = self.patch_indexes[idx][1] #Timepoint
+            center = self.patch_indexes[idx][2] #Center of the patch
 
             slice_ = [slice(c_idx-p_idx, c_idx+s_idx-p_idx)
                     for (c_idx, p_idx, s_idx) in zip(center,
                                                     self.patch_half,
                                                     self.patch_size)]
 
-            #Read images -> Super slow, reads image for every patch
-            if self.pad_or_not:
-                if self.prev_im_ == im_:
-                    s = self.prev_input_data
-                    l = self.prev_labels
-                else:
+            #Read images only if different image index
+            if (prev_pat != im_ or prev_tp != tp):
+                if self.pad_or_not:
                     s = [self.apply_padding(nib.load(
-                            self.input_data[im_][k]).get_data().astype('float32'))
+                            self.input_data[im_][tp][k]).get_data().astype('float32'))
                                     for k in range(self.num_modalities)]
                     l = [self.apply_padding(nib.load(
-                            self.input_labels[im_][0]).get_data().astype('float32'))]
-            else:
-                if self.prev_im_ == im_:
-                    s = self.prev_input_data
-                    l = self.prev_labels
+                            self.input_labels[im_][tp][0]).get_data().astype('float32'))]
                 else:
                     s = [nib.load(
-                            self.input_data[im_][k]).get_data().astype('float32')
+                            self.input_data[im_][tp][k]).get_data().astype('float32')
                                     for k in range(self.num_modalities)]
                     l = [nib.load(
-                            self.input_labels[im_][0]).get_data().astype('float32')]
+                            self.input_labels[im_][tp][0]).get_data().astype('float32')]
 
-            if self.normalize:
-                s = [normalize_data(s[m], norm_type = self.norm_type) for m in range(len(s))]
+                if self.normalize:
+                    s = [normalize_data(s[m], norm_type = self.norm_type) for m in range(len(s))]
 
-            self.prev_input_data = s.copy()
-            self.prev_labels = l.copy()
+                prev_pat = im_
+                prev_tp = tp
 
             # get current patches for both training data and labels
             input_train = np.stack([s[m][tuple(slice_)]
@@ -450,12 +446,12 @@ class PatchLoader3DLoadAll(Dataset):
                 input_train, input_label = self.transform([input_train,
                                                         input_label])
 
-            self.prev_im_ = im_
+            #self.prev_im_ = im_
 
-            all_patches[idx, :-1, :, :, :] = input_train.astype('float32')
-            all_patches[idx, -1, :, :, :] = input_label.astype('float32')
+            all_patches[idx, :, :, :, :] = input_train.astype('float32')
+            all_labels[idx, 0, :, :, :] = input_label.astype('float32')
 
-        return all_patches
+        return all_patches, all_labels
 
     def apply_padding(self, input_data, mode='constant', value=0):
         """
@@ -481,35 +477,35 @@ class PatchLoader3DLoadAll(Dataset):
         training_indexes = []
         # patch_half = tuple([idx // 2 for idx in self.patch_size])
 
-        #TODO: Include information about case number (store dictionary instead of list in init)
+        for patient_number,timepoints_list in self.input_data.items(): # For each patient
+            for tp in range(len(timepoints_list)):
+                #Padding
+                print(">>Analyzing patient", patient_number, ", timepoint", tp+1)
+                if self.pad_or_not:
+                    s = [self.apply_padding(nib.load(
+                            timepoints_list[tp][k]).get_data().astype('float32')) #Take first timepoint as reference for the patches
+                                for k in range(self.num_modalities)]
+                    l = [self.apply_padding(nib.load(
+                            self.input_labels[patient_number][tp][0]).get_data().astype('float32'))] #Take GT of last timepoint
+                    r = [self.apply_padding(nib.load(
+                            self.input_rois[patient_number][tp][0]).get_data().astype('float32'))] #Take last brain mask 
+                #No pading
+                else:
+                    s = [nib.load(
+                            timepoints_list[tp][k]).get_data().astype('float32')
+                                for k in range(self.num_modalities)]
+                    l = [nib.load(
+                            self.input_labels[patient_number][tp][0]).get_data().astype('float32')]
+                    r = [nib.load(
+                            self.input_rois[patient_number][tp][0]).get_data().astype('float32')]              
 
-        for i in range(len(self.input_data)): # Process one image at a time
-            #Padding
-            if self.pad_or_not:
-                s = [self.apply_padding(nib.load(
-                        self.input_data[i][k]).get_data().astype('float32'))
-                              for k in range(self.num_modalities)]
-                l = [self.apply_padding(nib.load(
-                        self.input_labels[i][0]).get_data().astype('float32'))]
-                r = [self.apply_padding(nib.load(
-                        self.input_rois[i][0]).get_data().astype('float32'))]
-            #No pading
-            else:
-                s = [nib.load(
-                        self.input_data[i][k]).get_data().astype('float32')
-                              for k in range(self.num_modalities)]
-                l = [nib.load(
-                        self.input_labels[i][0]).get_data().astype('float32')]
-                r = [nib.load(
-                        self.input_rois[i][0]).get_data().astype('float32')]                
 
-
-            candidate_voxels = self.get_candidate_voxels(s[0], l[0], r[0]) #FLAIR, labels, brain mask
-            voxel_coords = get_voxel_coordenates(s[0],
-                                                 candidate_voxels,
-                                                 step_size=self.sampling_step,
-                                                 random_pad=self.random_pad)
-            training_indexes += [(i, tuple(v)) for v in voxel_coords]
+                candidate_voxels = self.get_candidate_voxels(s[0], l[0], r[0]) #FLAIR, labels, brain mask
+                voxel_coords = get_voxel_coordenates(s[0],
+                                                    candidate_voxels,
+                                                    step_size=self.sampling_step,
+                                                    random_pad=self.random_pad)
+                training_indexes += [(patient_number, tp, tuple(v)) for v in voxel_coords]
 
         print("Total number of patches:", len(training_indexes))
 
@@ -1522,22 +1518,26 @@ def get_inference_patches(path_test, case, input_data, roi, patch_shape, step, n
     if mode == "cs":
         scan_path = jp(path_test, case)
         # get candidate voxels
-        mask_image = nib.load(os.path.join(scan_path, roi))
+        timepoints = list_folders(scan_path)
+        output_patches = []
+        all_ref_voxels = []
+        for tp in range(len(timepoints)):
+            mask_image = nib.load(os.path.join(scan_path, timepoints[tp], roi))
 
-        _, ref_voxels = get_candidate_voxels(mask_image.get_data(),
-                                                    step,
-                                                    sel_method='all')
-
-        # input images stacked as channels
-        test_patches = get_data_channels(scan_path,
-                                        input_data,
-                                        ref_voxels,
-                                        patch_shape,
-                                        step,
-                                        normalize=normalize,
-                                        norm_type = norm_type)
-
-        return test_patches, ref_voxels
+            _, ref_voxels = get_candidate_voxels(mask_image.get_data(),
+                                                        step,
+                                                        sel_method='all')
+            all_ref_voxels.append(ref_voxels)
+            # input images stacked as channels
+            patches = get_data_channels(os.path.join(scan_path, timepoints[tp]),
+                                            input_data,
+                                            ref_voxels,
+                                            patch_shape,
+                                            step,
+                                            normalize=normalize,
+                                            norm_type = norm_type)
+            output_patches.append(patches)
+        return output_patches, all_ref_voxels
 
     elif mode == "l":
         scan_path = jp(path_test, case)

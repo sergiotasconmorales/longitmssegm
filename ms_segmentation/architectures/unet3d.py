@@ -93,7 +93,9 @@ class OutConv3D(nn.Module):
 
 class Unet_orig(nn.Module):
     """
-    Basic U-net model
+    Basic U-net model.
+    Skip connections by sums instead of concatenations
+    Subsampling by convolutions
     """
 
     def __init__(self, input_size, output_size):
@@ -198,7 +200,6 @@ class Unet_orig(nn.Module):
         return out
 
 
-
 class UNet3D_1(nn.Module):
     """
     Basic U-net model
@@ -297,12 +298,6 @@ class UNet3D_1(nn.Module):
         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
         return out
-
-
-
-
-
-
 
 
 class UNet3D_2(nn.Module):
@@ -404,3 +399,46 @@ class UNet3D_2(nn.Module):
         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
         return out
+
+
+class UNet_3D_alt(nn.Module):
+    """
+    Basic U-net model
+    Changes: 
+        Blocks implemented according to class blocks defined in unet3d file. Double convolutions used along with BN
+    """
+
+    def __init__(self, n_channels, n_classes, bilinear=True):
+
+        super(UNet_3D_alt, self).__init__()
+
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        self.inc = DoubleConv3D(n_channels, 32)
+        self.down1 = Down3D(32, 64)
+        self.down2 = Down3D(64, 128)
+        self.down3 = Down3D(128, 256)
+        self.down4 = Down3D(256, 256)
+        self.up1 = Up3D(512, 128, bilinear)
+        self.up2 = Up3D(256, 64, bilinear)
+        self.up3 = Up3D(128, 32, bilinear)
+        self.up4 = Up3D(64, 32, bilinear)
+        self.outc = OutConv3D(32, n_classes)
+
+    def forward(self, x):
+        #x eg (10,3,32,32,32)
+        x1 = self.inc(x) # (10,32,32,32,32)
+        x2 = self.down1(x1) # (10,64,16,16,16)
+        x3 = self.down2(x2) # (10,128,8,8,8)
+        x4 = self.down3(x3) # (10,256,4,4,4)
+        x5 = self.down4(x4) # (10,256,2,2,2)
+
+        x = self.up1(x5, x4) # (10,128,4,4,4)
+        x = self.up2(x, x3) # (10,64,8,8,8)
+        x = self.up3(x, x2) # (10,32,16,16,16)
+        x = self.up4(x, x1) # (10,32,32,32,32)
+
+        logits = F.softmax(self.outc(x), dim=1) # (10,2,32,32,32)
+        return logits 
