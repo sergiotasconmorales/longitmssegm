@@ -209,7 +209,7 @@ def get_dictionary_with_paths(scans, the_path, the_names):
     d = {}
     for scan in scans:
             d[scan] = []
-            num_time_points = len(list_files_with_name_containing(os.path.join(the_path, scan), "flair", "nii.gz")) #Flair is always there, so use it as reference
+            num_time_points = len(list_files_with_name_containing(os.path.join(the_path, scan), "brain_mask", "nii.gz")) #Flair is always there, so use it as reference
             for i_t in range(num_time_points):
                 d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
     return d

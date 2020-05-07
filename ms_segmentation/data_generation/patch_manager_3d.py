@@ -1034,6 +1034,11 @@ class PatchLoader3DTimeLoadAll(Dataset):
 
         all_labels = np.zeros((len(self.patch_indexes), self.num_timepoints, self.patch_size[0],self.patch_size[1],self.patch_size[2]), dtype=np.uint8)
         
+        all_s = [] #To store images from all x timepoints required
+        all_l = []
+        prev_im_ = None
+        prev_slice_indexes = None
+
         for idx in range(len(self.patch_indexes)):
             print(idx+1, "/", len(self.patch_indexes))
             im_ = self.patch_indexes[idx][0] #Patient
@@ -1048,30 +1053,42 @@ class PatchLoader3DTimeLoadAll(Dataset):
             output_patch = np.zeros(self.input_train_dim, dtype = 'float32') #Array to store output patches
             output_label = np.zeros(self.input_label_dim, dtype = 'float32') #Array to store output labels
             ind = 0
-            for i_t in slice_indexes: #For each timepoint
-                #Read images -> Super slow, reads image for every patch
-                if self.pad_or_not:
-                    s = [self.apply_padding(nib.load(
-                            self.input_data[im_][i_t][k]).get_data().astype('float32'))
-                                    for k in range(self.num_modalities)]
-                    l = [self.apply_padding(nib.load(
-                            self.input_labels[im_][i_t][0]).get_data().astype('float32'))]
-                else:
-                    s = [nib.load(
-                            self.input_data[im_][i_t][k]).get_data().astype('float32')
-                                    for k in range(self.num_modalities)]
-                    l = [nib.load(
-                            self.input_labels[im_][i_t][0]).get_data().astype('float32')]
+
+            #Condition to load new images only if they are different as compared to those for previous idx
+            if prev_im_ != im_ or prev_slice_indexes != slice_indexes: # If image or timepoints change
+                all_s = []
+                all_l = []
+
+                for i_t in slice_indexes: #For each timepoint
+                    #Read images -> Super slow, reads image for every patch
+
+                    if self.pad_or_not:
+                        all_s.append([self.apply_padding(nib.load(
+                                self.input_data[im_][i_t][k]).get_data().astype('float32'))
+                                        for k in range(self.num_modalities)])
+                        all_l.append([self.apply_padding(nib.load(
+                                self.input_labels[im_][i_t][0]).get_data().astype('float32'))])
+                    else:
+                        all_s.append([nib.load(
+                                self.input_data[im_][i_t][k]).get_data().astype('float32')
+                                        for k in range(self.num_modalities)])
+                        all_l.append([nib.load(
+                                self.input_labels[im_][i_t][0]).get_data().astype('float32')])
 
                 if self.normalize:
-                    s = [normalize_data(s[m], norm_type = self.norm_type) for m in range(len(s))]
+                    for i_tp in range(len(all_s)):
+                        all_s[i_tp] = [normalize_data(all_s[i_tp][m], norm_type = self.norm_type) for m in range(len(all_s[i_tp]))]
 
+                prev_im_ = im_
+                prev_slice_indexes = slice_indexes
+
+            for i_t in range(len(all_s)):    
 
                 # get current patches for both training data and labels
-                input_train = np.stack([s[m][tuple(slice_)]
+                input_train = np.stack([all_s[i_t][m][tuple(slice_)]
                                         for m in range(self.num_modalities)], axis=0)
                 input_label = np.expand_dims(
-                    l[0][tuple(slice_)], axis=0)
+                    all_l[i_t][0][tuple(slice_)], axis=0)
 
                 # check dimensions and put zeros if necessary
                 if (self.num_timepoints,)+input_train.shape != self.input_train_dim:
