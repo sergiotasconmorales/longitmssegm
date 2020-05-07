@@ -24,7 +24,7 @@ from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime,
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import Unet_orig, UNet3D_1, UNet3D_2
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvGRU_3D_alt
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
@@ -34,12 +34,15 @@ from sklearn.metrics import jaccard_score as jsc
 from ms_segmentation.evaluation.metrics import compute_dices, compute_hausdorf
 
 
-debug = False
+debug = True 
+if debug:
+    print("Debugging mode ...")
 
 
 options = {}
 options['val_split']  = 0.2
-options['input_data'] = ['flair', 'mprage', 'pd']
+options['input_data'] = ['flair', 'pd_times_fl', 't2_times_fl', 't1_inv_times_fl', 'sum_times_fl']
+#options['input_data'] = ['pd_times_flair', 't2_times_flair', 't1_inv_times_flair', 'sum_times_flair']
 options['gt'] = 'mask1'
 options['brain_mask'] = 'brain_mask'
 options['num_classes'] = 2
@@ -69,10 +72,10 @@ all_patients = list_folders(path_data)
 if(debug):
     experiment_name = "dummy_UNetConvLSTM"
 else:
-    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvGRU3D")
+    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvLSTM3D")
 
 #experiment_name = 'CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
-fold = 1
+fold = 0
 for curr_test_patient in all_patients:
     fold += 1
     curr_train_patients = all_patients.copy()
@@ -141,7 +144,7 @@ for curr_test_patient in all_patients:
                                     batch_size=options['batch_size'],
                                     shuffle=True)
 
-    
+
 
     #Get frequency of each label
     if(options['loss'] == 'cross-entropy'):
@@ -178,7 +181,7 @@ for curr_test_patient in all_patients:
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
     #lesion_model = UNet_ConvGRU_3D_1(input_size=len(options['input_data']), output_size=options['num_classes'])
-    lesion_model = UNet_ConvGRU_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_ConvLSTM_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
     #lesion_model = UNet3D_1(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
     # lesion_model.cuda()
@@ -237,7 +240,7 @@ for curr_test_patient in all_patients:
             for i_tp in range(x_np.shape[1]):
                 for i_seq in range(x_np.shape[2]):
                     save_image(x_np[i_batch, i_tp, i_seq, :, :, :], "img_batch_"+str(i_batch)+ "_tp_"+str(i_tp)+"_seq_"+str(i_seq) + ".nii.gz")
-
+    
 
     try:
         while training:

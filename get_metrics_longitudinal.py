@@ -7,9 +7,16 @@ import cc3d
 from ms_segmentation.general.general import list_folders, list_files_with_name_containing
 from ms_segmentation.evaluation.metrics import compute_metrics
 
+last_only = True
+
 exp_folders = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation'
+
 gt_list = ['mask1', 'mask2']
-all_experiments = list_folders(exp_folders)
+
+if last_only:
+    all_experiments = list_folders(exp_folders)[-1:]
+else:
+    all_experiments = list_folders(exp_folders)
 for i_exp, exp in enumerate(all_experiments):
     print("Curr. exp: ", exp, "(", i_exp+1, "/", len(all_experiments), ")")
     for gt_curr in gt_list:

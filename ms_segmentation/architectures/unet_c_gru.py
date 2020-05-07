@@ -588,7 +588,7 @@ class UNet_ConvGRU_3D_1(nn.Module):
 
 
 
-class UNet_ConvGRU_3D_alt(nn.Module):
+class UNet_ConvLSTM_3D_alt(nn.Module):
     """
     Basic U-net model
     Changes: 
@@ -597,7 +597,7 @@ class UNet_ConvGRU_3D_alt(nn.Module):
 
     def __init__(self, n_channels, n_classes, bilinear=True):
 
-        super(UNet_ConvGRU_3D_alt, self).__init__()
+        super(UNet_ConvLSTM_3D_alt, self).__init__()
 
         self.n_channels = n_channels
         self.n_classes = n_classes
