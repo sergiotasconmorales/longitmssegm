@@ -24,17 +24,17 @@ from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime,
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import Unet_orig, UNet3D_1, UNet3D_2
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_hope
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
 import torchvision.transforms as transforms
 from ms_segmentation.general.training_helper import EarlyStopping, exp_lr_scheduler, dice_loss, create_training_validation_sets
 from sklearn.metrics import jaccard_score as jsc
-from ms_segmentation.evaluation.metrics import compute_dices, compute_hausdorf
+from ms_segmentation.evaluation.metrics import compute_metrics
 
 
-debug = True 
+debug = False 
 if debug:
     print("Debugging mode ...")
 
@@ -47,10 +47,10 @@ options['gt'] = 'mask1'
 options['brain_mask'] = 'brain_mask'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
-options['sampling_step'] = (16,16,16)
+options['sampling_step'] = (14,14,14)
 options['normalize'] = True 
 options['norm_type'] = 'zero_one'
-options['batch_size'] = 5
+options['batch_size'] = 16
 options['patience'] =  20 #Patience for the early stopping
 options['gpu_use'] = True
 options['num_epochs'] = 200
@@ -74,8 +74,8 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvLSTM3D")
 
-#experiment_name = 'CROSS_VALIDATION_UNetConvGRU3D_2020-04-19_01_43_15'
-fold = 0
+experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-05-08_10_49_15'
+fold = 2
 for curr_test_patient in all_patients:
     fold += 1
     curr_train_patients = all_patients.copy()
@@ -181,7 +181,7 @@ for curr_test_patient in all_patients:
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
     #lesion_model = UNet_ConvGRU_3D_1(input_size=len(options['input_data']), output_size=options['num_classes'])
-    lesion_model = UNet_ConvLSTM_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_ConvLSTM_3D_hope(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
     #lesion_model = UNet3D_1(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
     # lesion_model.cuda()
@@ -454,7 +454,7 @@ for curr_test_patient in all_patients:
 
 
     #Evaluate all test images
-    columns = ['Case','DSC','HD']
+    columns = columns = compute_metrics(None, None, labels_only=True)
     df = pd.DataFrame(columns = columns)
 
     test_images = [curr_test_patient]
@@ -503,10 +503,10 @@ for curr_test_patient in all_patients:
             labels_gt = nib.load(list_gt[i_timepoint][0]).get_fdata().astype(np.uint8)  #GT  
 
             #DSC
-            dsc = compute_dices(labels_gt.flatten(), labels.flatten())
-            hd = compute_hausdorf(labels_gt, labels.astype(np.uint8))
+            #dsc = compute_dices(labels_gt.flatten(), labels.flatten())
+            metrics = compute_metrics(labels_gt, labels)
 
-            df.loc[i_row] = [case, dsc[0], hd[0]]
+            df.loc[i_row] = list(metrics.values())
             i_row += 1
             #Save result
             img_nib = nib.Nifti1Image(labels, np.eye(4))

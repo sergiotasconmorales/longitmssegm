@@ -674,3 +674,92 @@ class UNet_ConvLSTM_3D_alt(nn.Module):
         x = x[:,-1,:,:,:,:] # (5,32,32,32,32)
         logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
         return logits # (5,2,32,32,32)
+
+
+
+class UNet_ConvLSTM_3D_hope(nn.Module):
+    """
+    Basic U-net model
+    Changes: 
+        Blocks implemented according to class blocks defined in unet3d file
+    """
+
+    def __init__(self, n_channels, n_classes, bilinear=True):
+
+        super(UNet_ConvLSTM_3D_hope, self).__init__()
+
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        self.inc = DoubleConv3D(n_channels, 32)
+        self.down1 = Down3D(32, 64)
+        self.down2 = Down3D(64, 128)
+        self.down3 = Down3D(128, 256)
+        self.convLSTM1 = ConvLSTM3D(input_size=(4,4,4),
+                                input_dim=256,
+                                hidden_dim=[256],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.down4 = Down3D(256, 256)
+        self.up1 = Up3D(512, 128, bilinear)
+        self.up2 = Up3D(256, 64, bilinear)
+        self.up3 = Up3D(128, 32, bilinear)
+        self.up4 = Up3D(64, 32, bilinear)
+        self.convLSTM2 = ConvLSTM3D(input_size=(32,32,32),
+                                input_dim=32,
+                                hidden_dim=[64],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.outc = OutConv3D(64, n_classes)
+
+
+
+        # Define wrappers
+    def wrapper_conv(self, the_input, layer, out_channels, layer_type= "Down"):
+        num_time_steps = the_input.size(1)
+        if layer_type == "DoubleConv":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-3), the_input.size(-2), the_input.size(-1))).cuda()
+        elif layer_type == "Down":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-3)//2, the_input.size(-2)//2, the_input.size(-1)//2)).cuda()
+        else: #layer_type == OutConv
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), out_channels, the_input.size(-3), the_input.size(-2), the_input.size(-1))).cuda()
+            the_output = layer(the_input)
+            return the_output
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:,:] = layer(the_input[:,i_tp,:,:,:,:])
+        return the_output
+
+    def wrapper_up(self, the_input1, the_input2, layer, out_channels):
+
+        num_time_steps = the_input1.size(1)
+        the_output = torch.zeros_like(torch.Tensor(the_input1.size(0), num_time_steps, out_channels, int(2*the_input1.size(-3)), int(2*the_input1.size(-2)), int(2*the_input1.size(-1)))).cuda()
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:,:] = layer(the_input1[:,i_tp,:,:,:,:], the_input2[:,i_tp,:,:,:,:])
+        return the_output
+
+    def forward(self, x):
+        #x eg (5,3,2,32,32,32)
+        x1 = self.wrapper_conv(x, self.inc, 32, layer_type = "DoubleConv") # (5,3,32,32,32,32)
+        x2 = self.wrapper_conv(x1, self.down1, 64) # (5,3,64,16,16,16)
+        x3 = self.wrapper_conv(x2, self.down2, 128) # (5,3,128,8,8,8)
+        x4 = self.wrapper_conv(x3, self.down3, 256) # (5,3,256,4,4,4)
+        #x5_ = self.convLSTM1(x4)[0] # (5,3,256,4,4,4)
+        x5 = self.wrapper_conv(x4, self.down4, 256) # (5,3,256,2,2,2)
+        #
+        x = self.wrapper_up(x5, x4, self.up1,128) # (5,3,128,4,4,4)
+        x = self.wrapper_up(x, x3, self.up2, 64) # (5,3,64,8,8,8)
+        x = self.wrapper_up(x, x2, self.up3, 32) # (5,3,32,16,16,16)
+        x = self.wrapper_up(x, x1, self.up4, 32) # (5,3,32,32,32,32)
+        x = self.convLSTM2(x)[0]
+        #x = self.convGRU2(x)[0][0].permute(0,2,1,3,4,5) #(5,32,3,32,32,32)
+
+        x = x[:,-1,:,:,:,:] # (5,32,32,32,32)
+        logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
+        return logits # (5,2,32,32,32)

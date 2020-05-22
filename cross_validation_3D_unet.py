@@ -22,7 +22,7 @@ from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim
 from medpy.io import load
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, ToTensor3DPatch
 from ms_segmentation.architectures.unet3d import UNet_3D_alt
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvGRU_3D_alt
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt
 from ms_segmentation.architectures.cnn1 import CNN1, CNN2
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -39,9 +39,10 @@ debug = False
 options = {}
 options['val_split']  = 0.2
 #options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz']
+#options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz', 't2.nii.gz']
 #options['input_data'] = ['flair.nii.gz', 'pd_times_flair.nii.gz', 't2_times_flair.nii.gz', 't1_inv_times_flair.nii.gz', 'sum_times_flair.nii.gz']
-options['input_data'] = ['flair.nii.gz']
-options['gt'] = 'mask1.nii.gz'
+options['input_data'] = ['fused_flt2.nii.gz']
+options['gt'] = 'mask1.nii.gz'                     # ACHTUUUUUUUUUUUUUUUUUUNG!
 options['brain_mask'] = 'brain_mask.nii.gz'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
@@ -70,7 +71,7 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNet3D")
 
-
+#experiment_name = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation\CROSS_VALIDATION_UNet3D_2020-05-04_18_48_20[flair_only]'
 fold = 0
 for curr_test_patient in all_patients:
     fold += 1
@@ -100,7 +101,7 @@ for curr_test_patient in all_patients:
                                     ToTensor3DPatch()
                                 ])
 
-
+    
     print('Training data: ')
     
     training_dataset = PatchLoader3DLoadAll(input_data=input_dictionary['input_train_data'],

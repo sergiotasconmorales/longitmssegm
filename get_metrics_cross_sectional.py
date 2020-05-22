@@ -7,10 +7,14 @@ import cc3d
 from ms_segmentation.general.general import list_folders, list_files_with_name_containing
 from ms_segmentation.evaluation.metrics import compute_metrics
 
+last_only = True # evaluate only last experiment
+
 exp_folders = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation'
 gt_list = ['mask1.nii.gz', 'mask2.nii.gz']
 all_experiments = list_folders(exp_folders)
-for i_exp, exp in enumerate(all_experiments[-1:]):
+if last_only:
+    all_experiments = all_experiments[-1:]
+for i_exp, exp in enumerate(all_experiments):
     print("Curr. exp: ", exp, "(", i_exp+1, "/", len(all_experiments), ")")
     for gt_curr in gt_list:
         experiment_folder = jp(exp_folders, exp)

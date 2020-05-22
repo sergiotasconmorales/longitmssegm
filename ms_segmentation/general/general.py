@@ -247,7 +247,7 @@ def cls():
     """
     os.system('cls||clear')
 
-def save_image(the_array, the_path, orientation="LPI"):
+def save_image(the_array, the_path, orientation="RAI"):
     """Function to save a numpy array as an image. Name and format are specified in <the_path>
     
     Parameters

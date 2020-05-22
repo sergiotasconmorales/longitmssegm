@@ -7,7 +7,7 @@ from scipy import ndimage
 from os.path import join as jp
 from torch.utils.data import Dataset
 from operator import add 
-from ..general.general import list_folders, list_files_with_name_containing, get_dictionary_with_paths 
+from ..general.general import list_folders, list_files_with_name_containing, get_dictionary_with_paths, save_image 
 from .transforms3D import RandomFlipX, RandomFlipY, RandomFlipZ, RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch
 
 class PatchLoader3D(Dataset):
@@ -1676,11 +1676,21 @@ def get_candidate_voxels(input_mask,  step_size, sel_method='all'):
     return candidate_voxels, voxel_coords
 
 
-def build_image(infer_patches, lesion_model, device, num_classes, options):
+def build_image(infer_patches, lesion_model, device, num_classes, options, save_feature_maps = False):
   sh = infer_patches.shape
   lesion_out = np.zeros((sh[0], num_classes, sh[-3], sh[-2], sh[-1]))
   batch_size = options['batch_size']
   b =0
+
+  if save_feature_maps:
+    activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+        return hook
+
+    lesion_model.inc.register_forward_hook(get_activation('inc'))
+
   # model
   lesion_model.eval()
   with torch.no_grad():
@@ -1688,6 +1698,16 @@ def build_image(infer_patches, lesion_model, device, num_classes, options):
           x = torch.tensor(infer_patches[b:b+batch_size]).to(device)
           pred = lesion_model(x)
           # save the result back from GPU to CPU --> numpy
+          if save_feature_maps:
+              # save original images
+              for i_b in range(x.size()[0]):
+                  for i_m in range(x.size()[1]):
+                      save_image(x[i_b, i_m, :, :, :].detach().cpu().numpy(), "orig_batch" + str(i_b).zfill(3) + "_mod"+ str(i_m).zfill(3) + ".nii.gz")
+              # save feature maps
+              for k, v in activation.items():
+                  for i_b in range(v.size()[0]): # save all elements of batch
+                      for i_fm in range(v.size()[1]): # save all channels
+                          save_image(v[i_b, i_fm, :, :, :].cpu().numpy(), k + "_batch" + str(i_b).zfill(3) + "_fm" + str(i_fm).zfill(3) + ".nii.gz")
           lesion_out[b:b+batch_size] = pred.detach().cpu().numpy().astype('float32')
   return lesion_out
 
