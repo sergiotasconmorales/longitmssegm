@@ -21,7 +21,7 @@ from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, ToTensor3DPatch
-from ms_segmentation.architectures.unet3d import UNet_3D_alt
+from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_skip_hybrid
 from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt
 from ms_segmentation.architectures.cnn1 import CNN1, CNN2
 from torch.utils.data import DataLoader
@@ -39,9 +39,9 @@ debug = False
 options = {}
 options['val_split']  = 0.2
 #options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz']
-#options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz', 't2.nii.gz']
+options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz', 't2.nii.gz']
 #options['input_data'] = ['flair.nii.gz', 'pd_times_flair.nii.gz', 't2_times_flair.nii.gz', 't1_inv_times_flair.nii.gz', 'sum_times_flair.nii.gz']
-options['input_data'] = ['fused_flt2.nii.gz']
+#options['input_data'] = ['fused_flt2.nii.gz']
 options['gt'] = 'mask1.nii.gz'                     # ACHTUUUUUUUUUUUUUUUUUUNG!
 options['brain_mask'] = 'brain_mask.nii.gz'
 options['num_classes'] = 2
@@ -137,10 +137,10 @@ for curr_test_patient in all_patients:
                                     shuffle=True)
     
 
-    lesion_model = UNet_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
-    # lesion_model.cuda()
-    # input_tensor = torch.rand(10, 3, 32, 32, 32).cuda()
-    # pred = lesion_model(input_tensor)
+    lesion_model = UNet_3D_double_skip_hybrid(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
+    #lesion_model.cuda()
+    #input_tensor = torch.rand(16, 4, 32, 32, 32).cuda()
+    #pred = lesion_model(input_tensor)
 
     options['model_name'] = lesion_model.__class__.__name__
     model_name = 'ms_lesion_segmentation'

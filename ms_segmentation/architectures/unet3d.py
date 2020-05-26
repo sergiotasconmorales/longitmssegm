@@ -14,6 +14,69 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
+
+class SingleConv3D(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.single_conv = nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm3d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+    def forward(self, x):
+        return self.single_conv(x)
+
+class DoubleConv3D_alt(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv1 = SingleConv3D(in_channels, out_channels)
+        self.conv2 = SingleConv3D(out_channels, out_channels)
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.conv2(x1)
+        return x1, x2
+
+class Down3D_alt(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.maxpool = nn.MaxPool3d(2)
+        self.double_conv = DoubleConv3D_alt(in_channels, out_channels)
+
+    def forward(self, x):
+        x1 = self.maxpool(x)
+        x2, x3 = self.double_conv(x1)
+        return x2, x3
+
+class Up3D_alt(nn.Module):
+    """Upscaling then double conv"""
+
+    def __init__(self, in_channels, out_channels, bilinear=True):
+        super().__init__()
+
+        # if bilinear, use the normal convolutions to reduce the number of channels
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        else:
+            self.up = nn.ConvTranspose3d(in_channels // 2, in_channels // 2, kernel_size=2, stride=2)
+
+        self.conv1 = SingleConv3D(in_channels, in_channels//2)
+        self.conv2 = SingleConv3D(in_channels, out_channels)
+
+    def forward(self, x1, x2, x3):
+        x1 = self.up(x1)
+        # input is CHW
+        diffY = torch.tensor([x3.size()[2] - x1.size()[2]])
+        diffX = torch.tensor([x3.size()[3] - x1.size()[3]])
+
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
+                        diffY // 2, diffY - diffY // 2])
+        x = torch.cat([x3, x1], dim=1) # First skip connection (concatenation)
+        x4 = self.conv1(x)
+        #x5 = self.conv2(x3+x4) # Second skip connection (sum)
+        x5 = self.conv2(torch.cat([x2,x4], dim=1)) # second skip connection (concatenation)
+        return x5
+
+
 class DoubleConv3D(nn.Module):
     """(convolution => [BN] => ReLU) * 2"""
 
@@ -91,319 +154,362 @@ class OutConv3D(nn.Module):
 # ------------------------------------------------------------------------------------------
 
 
-class Unet_orig(nn.Module):
-    """
-    Basic U-net model.
-    Skip connections by sums instead of concatenations
-    Subsampling by convolutions
-    """
+# class Unet_orig(nn.Module):
+#     """
+#     Basic U-net model.
+#     Skip connections by sums instead of concatenations
+#     Subsampling by convolutions
+#     """
 
-    def __init__(self, input_size, output_size):
+#     def __init__(self, input_size, output_size):
 
-        super(Unet_orig, self).__init__()
+#         super(Unet_orig, self).__init__()
 
-        # conv1 down
-        self.conv1 = nn.Conv3d(in_channels=input_size,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 1
-        self.pool1 = nn.Conv3d(in_channels=32, #Max pooling implemented as a convolution. Allows to have different shapes
-                               out_channels=32,
-                               kernel_size=2,
-                               stride=2)
-        # conv2 down
-        self.conv2 = nn.Conv3d(in_channels=32,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 2
-        self.pool2 = nn.Conv3d(in_channels=64,
-                               out_channels=64,
-                               kernel_size=2,
-                               stride=2)
-        # conv3 down
-        self.conv3 = nn.Conv3d(in_channels=64,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 3
-        self.pool3 = nn.Conv3d(in_channels=128,
-                               out_channels=128,
-                               kernel_size=2,
-                               stride=2)
-        # conv4 down (latent space)
-        self.conv4 = nn.Conv3d(in_channels=128,
-                               out_channels=256,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv4
-        self.up1 = nn.ConvTranspose3d(in_channels=256,
-                                      out_channels=128,
-                                      kernel_size=2,
-                                      stride=2)        
-        # conv 5 (add up1 + conv3)
-        self.conv5 = nn.Conv3d(in_channels=128,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv5
-        self.up2 = nn.ConvTranspose3d(in_channels=128,
-                                      out_channels=64,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv6 (add up2 + conv2) 
-        self.conv6 = nn.Conv3d(in_channels=64,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # up 3
-        self.up3 = nn.ConvTranspose3d(in_channels=64,
-                                      out_channels=32,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv7 (add up3 + conv1)
-        self.conv7 = nn.Conv3d(in_channels=32,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # conv8 (classification)
-        self.conv8 = nn.Conv3d(in_channels=32,
-                               out_channels=output_size,
-                               kernel_size=1)
+#         # conv1 down
+#         self.conv1 = nn.Conv3d(in_channels=input_size,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 1
+#         self.pool1 = nn.Conv3d(in_channels=32, #Max pooling implemented as a convolution. Allows to have different shapes
+#                                out_channels=32,
+#                                kernel_size=2,
+#                                stride=2)
+#         # conv2 down
+#         self.conv2 = nn.Conv3d(in_channels=32,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 2
+#         self.pool2 = nn.Conv3d(in_channels=64,
+#                                out_channels=64,
+#                                kernel_size=2,
+#                                stride=2)
+#         # conv3 down
+#         self.conv3 = nn.Conv3d(in_channels=64,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 3
+#         self.pool3 = nn.Conv3d(in_channels=128,
+#                                out_channels=128,
+#                                kernel_size=2,
+#                                stride=2)
+#         # conv4 down (latent space)
+#         self.conv4 = nn.Conv3d(in_channels=128,
+#                                out_channels=256,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv4
+#         self.up1 = nn.ConvTranspose3d(in_channels=256,
+#                                       out_channels=128,
+#                                       kernel_size=2,
+#                                       stride=2)        
+#         # conv 5 (add up1 + conv3)
+#         self.conv5 = nn.Conv3d(in_channels=128,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv5
+#         self.up2 = nn.ConvTranspose3d(in_channels=128,
+#                                       out_channels=64,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv6 (add up2 + conv2) 
+#         self.conv6 = nn.Conv3d(in_channels=64,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up 3
+#         self.up3 = nn.ConvTranspose3d(in_channels=64,
+#                                       out_channels=32,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv7 (add up3 + conv1)
+#         self.conv7 = nn.Conv3d(in_channels=32,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # conv8 (classification)
+#         self.conv8 = nn.Conv3d(in_channels=32,
+#                                out_channels=output_size,
+#                                kernel_size=1)
 
-    def forward(self, x):
+#     def forward(self, x):
 
-        # encoder
-        x1 = F.relu(self.conv1(x))
-        x1p = self.pool1(x1)
-        x2 = F.relu(self.conv2(x1p))
-        x2p = self.pool2(x2)
-        x3 = F.relu(self.conv3(x2p))
-        x3p = self.pool3(x3)
+#         # encoder
+#         x1 = F.relu(self.conv1(x))
+#         x1p = self.pool1(x1)
+#         x2 = F.relu(self.conv2(x1p))
+#         x2p = self.pool2(x2)
+#         x3 = F.relu(self.conv3(x2p))
+#         x3p = self.pool3(x3)
         
-        # latent space
-        x4 = F.relu(self.conv4(x3p))
+#         # latent space
+#         x4 = F.relu(self.conv4(x3p))
 
-        # decoder
-        up1 = self.up1(x4)
-        x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
-        up2 = self.up2(x5)
-        x6 = F.relu(self.conv6(up2 + x2))
-        up3 = self.up3(x6)
-        x7 = F.relu(self.conv7(up3 + x1))
+#         # decoder
+#         up1 = self.up1(x4)
+#         x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
+#         up2 = self.up2(x5)
+#         x6 = F.relu(self.conv6(up2 + x2))
+#         up3 = self.up3(x6)
+#         x7 = F.relu(self.conv7(up3 + x1))
         
-        # output layer (2 classes)
-        # we use a softmax layer to return probabilities for each class
-        out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-        #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-        return out
+#         # output layer (2 classes)
+#         # we use a softmax layer to return probabilities for each class
+#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
+#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
+#         return out
 
 
-class UNet3D_1(nn.Module):
+# class UNet3D_1(nn.Module):
+#     """
+#     Basic U-net model
+#     Changes: 
+#         Sub-sampling by max-pooling
+#     """
+
+#     def __init__(self, input_size, output_size):
+
+#         super(UNet3D_1, self).__init__()
+
+#         # conv1 down
+#         self.conv1 = nn.Conv3d(in_channels=input_size,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 1
+#         self.pool1 = nn.MaxPool3d((2,2,2))
+#         # conv2 down
+#         self.conv2 = nn.Conv3d(in_channels=32,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 2
+#         self.pool2 = nn.MaxPool3d((2,2,2))
+#         # conv3 down
+#         self.conv3 = nn.Conv3d(in_channels=64,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 3
+#         self.pool3 = nn.MaxPool3d((2,2,2))
+#         # conv4 down (latent space)
+#         self.conv4 = nn.Conv3d(in_channels=128,
+#                                out_channels=256,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv4
+#         self.up1 = nn.ConvTranspose3d(in_channels=256,
+#                                       out_channels=128,
+#                                       kernel_size=2,
+#                                       stride=2)        
+#         # conv 5 (add up1 + conv3)
+#         self.conv5 = nn.Conv3d(in_channels=128,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv5
+#         self.up2 = nn.ConvTranspose3d(in_channels=128,
+#                                       out_channels=64,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv6 (add up2 + conv2) 
+#         self.conv6 = nn.Conv3d(in_channels=64,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up 3
+#         self.up3 = nn.ConvTranspose3d(in_channels=64,
+#                                       out_channels=32,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv7 (add up3 + conv1)
+#         self.conv7 = nn.Conv3d(in_channels=32,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # conv8 (classification)
+#         self.conv8 = nn.Conv3d(in_channels=32,
+#                                out_channels=output_size,
+#                                kernel_size=1)
+
+#     def forward(self, x):
+
+#         # encoder
+#         x1 = F.relu(self.conv1(x))
+#         x1p = self.pool1(x1)
+#         x2 = F.relu(self.conv2(x1p))
+#         x2p = self.pool2(x2)
+#         x3 = F.relu(self.conv3(x2p))
+#         x3p = self.pool3(x3)
+        
+#         # latent space
+#         x4 = F.relu(self.conv4(x3p))
+
+#         # decoder
+#         up1 = self.up1(x4)
+#         x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
+#         up2 = self.up2(x5)
+#         x6 = F.relu(self.conv6(up2 + x2))
+#         up3 = self.up3(x6)
+#         x7 = F.relu(self.conv7(up3 + x1))
+        
+#         # output layer (2 classes)
+#         # we use a softmax layer to return probabilities for each class
+#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
+#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
+#         return out
+
+
+# class UNet3D_2(nn.Module):
+#     """
+#     Basic U-net model
+#     Changes: 
+#         Sub-sampling by max-pooling
+#         Concatenation instead of sum for skip connections
+#     """
+
+#     def __init__(self, input_size, output_size):
+
+#         super(UNet3D_2, self).__init__()
+
+#         # conv1 down
+#         self.conv1 = nn.Conv3d(in_channels=input_size,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 1
+#         self.pool1 = nn.MaxPool3d((2,2,2))
+#         # conv2 down
+#         self.conv2 = nn.Conv3d(in_channels=32,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 2
+#         self.pool2 = nn.MaxPool3d((2,2,2))
+#         # conv3 down
+#         self.conv3 = nn.Conv3d(in_channels=64,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # max-pool 3
+#         self.pool3 = nn.MaxPool3d((2,2,2))
+#         # conv4 down (latent space)
+#         self.conv4 = nn.Conv3d(in_channels=128,
+#                                out_channels=256,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv4
+#         self.up1 = nn.ConvTranspose3d(in_channels=256,
+#                                       out_channels=128,
+#                                       kernel_size=2,
+#                                       stride=2)        
+#         # conv 5 (add up1 + conv3)
+#         self.conv5 = nn.Conv3d(in_channels=256,
+#                                out_channels=128,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up-sample conv5
+#         self.up2 = nn.ConvTranspose3d(in_channels=128,
+#                                       out_channels=64,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv6 (add up2 + conv2) 
+#         self.conv6 = nn.Conv3d(in_channels=128,
+#                                out_channels=64,
+#                                kernel_size=3,
+#                                padding=1)
+#         # up 3
+#         self.up3 = nn.ConvTranspose3d(in_channels=64,
+#                                       out_channels=32,
+#                                       kernel_size=2,
+#                                       stride=2)
+#         # conv7 (add up3 + conv1)
+#         self.conv7 = nn.Conv3d(in_channels=64,
+#                                out_channels=32,
+#                                kernel_size=3,
+#                                padding=1)
+#         # conv8 (classification)
+#         self.conv8 = nn.Conv3d(in_channels=32,
+#                                out_channels=output_size,
+#                                kernel_size=1)
+
+#     def forward(self, x):
+
+#         # encoder
+#         x1 = F.relu(self.conv1(x))
+#         x1p = self.pool1(x1)
+#         x2 = F.relu(self.conv2(x1p))
+#         x2p = self.pool2(x2)
+#         x3 = F.relu(self.conv3(x2p))
+#         x3p = self.pool3(x3)
+        
+#         # latent space
+#         x4 = F.relu(self.conv4(x3p))
+
+#         # decoder
+#         up1 = self.up1(x4)
+#         x5 = F.relu(self.conv5(torch.cat([up1, x3], dim=1))) 
+#         up2 = self.up2(x5)
+#         x6 = F.relu(self.conv6(torch.cat([up2, x2], dim=1)))
+#         up3 = self.up3(x6)
+#         x7 = F.relu(self.conv7(torch.cat([up3, x1], dim=1)))
+        
+#         # output layer (2 classes)
+#         # we use a softmax layer to return probabilities for each class
+#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
+#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
+#         return out
+
+
+class UNet_3D_double_skip_hybrid(nn.Module):
     """
-    Basic U-net model
+    UNet with double skip connections (sum and concatenation)
     Changes: 
-        Sub-sampling by max-pooling
+        Blocks implemented according to class blocks defined in unet3d file. Double convolutions used along with BN
     """
 
-    def __init__(self, input_size, output_size):
+    def __init__(self, n_channels, n_classes, bilinear=True):
 
-        super(UNet3D_1, self).__init__()
+        super(UNet_3D_double_skip_hybrid, self).__init__()
 
-        # conv1 down
-        self.conv1 = nn.Conv3d(in_channels=input_size,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 1
-        self.pool1 = nn.MaxPool3d((2,2,2))
-        # conv2 down
-        self.conv2 = nn.Conv3d(in_channels=32,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 2
-        self.pool2 = nn.MaxPool3d((2,2,2))
-        # conv3 down
-        self.conv3 = nn.Conv3d(in_channels=64,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 3
-        self.pool3 = nn.MaxPool3d((2,2,2))
-        # conv4 down (latent space)
-        self.conv4 = nn.Conv3d(in_channels=128,
-                               out_channels=256,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv4
-        self.up1 = nn.ConvTranspose3d(in_channels=256,
-                                      out_channels=128,
-                                      kernel_size=2,
-                                      stride=2)        
-        # conv 5 (add up1 + conv3)
-        self.conv5 = nn.Conv3d(in_channels=128,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv5
-        self.up2 = nn.ConvTranspose3d(in_channels=128,
-                                      out_channels=64,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv6 (add up2 + conv2) 
-        self.conv6 = nn.Conv3d(in_channels=64,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # up 3
-        self.up3 = nn.ConvTranspose3d(in_channels=64,
-                                      out_channels=32,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv7 (add up3 + conv1)
-        self.conv7 = nn.Conv3d(in_channels=32,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # conv8 (classification)
-        self.conv8 = nn.Conv3d(in_channels=32,
-                               out_channels=output_size,
-                               kernel_size=1)
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        self.inc = DoubleConv3D_alt(n_channels, 32)
+        self.down1 = Down3D_alt(32, 64)
+        self.down2 = Down3D_alt(64, 128)
+        self.down3 = Down3D_alt(128, 256)
+        self.down4 = Down3D_alt(256, 256)
+        self.up1 = Up3D_alt(512, 128, bilinear)
+        self.up2 = Up3D_alt(256, 64, bilinear)
+        self.up3 = Up3D_alt(128, 32, bilinear)
+        self.up4 = Up3D_alt(64, 32, bilinear)
+        self.outc = OutConv3D(32, n_classes)
 
     def forward(self, x):
+        #x eg (10,3,32,32,32)
+        x1, x2 = self.inc(x) # (10,32,32,32,32)
+        x3, x4 = self.down1(x2) # (10,64,16,16,16)
+        x5, x6 = self.down2(x4) # (10,128,8,8,8)
+        x7, x8 = self.down3(x6) # (10,256,4,4,4)
+        _, x10 = self.down4(x8) # (10,256,2,2,2)
 
-        # encoder
-        x1 = F.relu(self.conv1(x))
-        x1p = self.pool1(x1)
-        x2 = F.relu(self.conv2(x1p))
-        x2p = self.pool2(x2)
-        x3 = F.relu(self.conv3(x2p))
-        x3p = self.pool3(x3)
-        
-        # latent space
-        x4 = F.relu(self.conv4(x3p))
+        x = self.up1(x10, x8, x7) # (10,128,4,4,4)
+        x = self.up2(x, x6, x5) # (10,64,8,8,8)
+        x = self.up3(x, x4, x3) # (10,32,16,16,16)
+        x = self.up4(x, x2, x1) # (10,32,32,32,32)
 
-        # decoder
-        up1 = self.up1(x4)
-        x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
-        up2 = self.up2(x5)
-        x6 = F.relu(self.conv6(up2 + x2))
-        up3 = self.up3(x6)
-        x7 = F.relu(self.conv7(up3 + x1))
-        
-        # output layer (2 classes)
-        # we use a softmax layer to return probabilities for each class
-        out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-        #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-        return out
-
-
-class UNet3D_2(nn.Module):
-    """
-    Basic U-net model
-    Changes: 
-        Sub-sampling by max-pooling
-        Concatenation instead of sum for skip connections
-    """
-
-    def __init__(self, input_size, output_size):
-
-        super(UNet3D_2, self).__init__()
-
-        # conv1 down
-        self.conv1 = nn.Conv3d(in_channels=input_size,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 1
-        self.pool1 = nn.MaxPool3d((2,2,2))
-        # conv2 down
-        self.conv2 = nn.Conv3d(in_channels=32,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 2
-        self.pool2 = nn.MaxPool3d((2,2,2))
-        # conv3 down
-        self.conv3 = nn.Conv3d(in_channels=64,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # max-pool 3
-        self.pool3 = nn.MaxPool3d((2,2,2))
-        # conv4 down (latent space)
-        self.conv4 = nn.Conv3d(in_channels=128,
-                               out_channels=256,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv4
-        self.up1 = nn.ConvTranspose3d(in_channels=256,
-                                      out_channels=128,
-                                      kernel_size=2,
-                                      stride=2)        
-        # conv 5 (add up1 + conv3)
-        self.conv5 = nn.Conv3d(in_channels=256,
-                               out_channels=128,
-                               kernel_size=3,
-                               padding=1)
-        # up-sample conv5
-        self.up2 = nn.ConvTranspose3d(in_channels=128,
-                                      out_channels=64,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv6 (add up2 + conv2) 
-        self.conv6 = nn.Conv3d(in_channels=128,
-                               out_channels=64,
-                               kernel_size=3,
-                               padding=1)
-        # up 3
-        self.up3 = nn.ConvTranspose3d(in_channels=64,
-                                      out_channels=32,
-                                      kernel_size=2,
-                                      stride=2)
-        # conv7 (add up3 + conv1)
-        self.conv7 = nn.Conv3d(in_channels=64,
-                               out_channels=32,
-                               kernel_size=3,
-                               padding=1)
-        # conv8 (classification)
-        self.conv8 = nn.Conv3d(in_channels=32,
-                               out_channels=output_size,
-                               kernel_size=1)
-
-    def forward(self, x):
-
-        # encoder
-        x1 = F.relu(self.conv1(x))
-        x1p = self.pool1(x1)
-        x2 = F.relu(self.conv2(x1p))
-        x2p = self.pool2(x2)
-        x3 = F.relu(self.conv3(x2p))
-        x3p = self.pool3(x3)
-        
-        # latent space
-        x4 = F.relu(self.conv4(x3p))
-
-        # decoder
-        up1 = self.up1(x4)
-        x5 = F.relu(self.conv5(torch.cat([up1, x3], dim=1))) 
-        up2 = self.up2(x5)
-        x6 = F.relu(self.conv6(torch.cat([up2, x2], dim=1)))
-        up3 = self.up3(x6)
-        x7 = F.relu(self.conv7(torch.cat([up3, x1], dim=1)))
-        
-        # output layer (2 classes)
-        # we use a softmax layer to return probabilities for each class
-        out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-        #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-        return out
+        logits = F.softmax(self.outc(x), dim=1) # (10,2,32,32,32)
+        return logits 
 
 
 class UNet_3D_alt(nn.Module):
     """
-    Basic U-net model
+    Basic UNet
     Changes: 
         Blocks implemented according to class blocks defined in unet3d file. Double convolutions used along with BN
     """
@@ -442,3 +548,5 @@ class UNet_3D_alt(nn.Module):
 
         logits = F.softmax(self.outc(x), dim=1) # (10,2,32,32,32)
         return logits 
+
+
