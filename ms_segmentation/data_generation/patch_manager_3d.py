@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import random 
 from scipy import ndimage
+import SimpleITK as sitk
 from os.path import join as jp
 from torch.utils.data import Dataset
 from operator import add 
@@ -930,7 +931,8 @@ class PatchLoader3DTimeLoadAll(Dataset):
                  resample_epoch=False,
                  transform=None,
                  num_timepoints = 4,
-                 labels_mode = 'mask'): # 'mask' 'center' or 'lesion_patch'
+                 labels_mode = 'mask',
+                 histogram_matching = False): # 'mask' 'center' or 'lesion_patch'
         """
         Arguments:
         - input_data: dict containing a list of inputs for each training scan
@@ -970,6 +972,7 @@ class PatchLoader3DTimeLoadAll(Dataset):
         self.prev_labels = None
         self.num_timepoints = num_timepoints
         self.labels_mode = labels_mode #To decide what the GT of the patches is: "mask", "lesion_patch" (if patch contains lesion), or "TODO"
+        self.histogram_matching = histogram_matching
 
         #Check that number of images coincide 
         if not len(input_data) == len(labels) == len(rois):
@@ -1076,9 +1079,17 @@ class PatchLoader3DTimeLoadAll(Dataset):
                                 self.input_labels[im_][i_t][0]).get_data().astype('float32')])
 
                 if self.normalize:
+                    #Apply intensity normalization
                     for i_tp in range(len(all_s)):
                         all_s[i_tp] = [normalize_data(all_s[i_tp][m], norm_type = self.norm_type) for m in range(len(all_s[i_tp]))]
 
+                    #Apply histogram matching
+                    if self.histogram_matching:
+                        for i_mod in range(len(all_s[0])): # for all modalities
+                            img_ref = all_s[0][i_mod] # take first timepoint as reference
+                            for i_tp in range(1, len(all_s)): #for every timepoint (except the one used as ref)
+                                all_s[i_tp][i_mod] = match_histograms(all_s[i_tp][i_mod], img_ref) # target, ref
+                        
                 prev_im_ = im_
                 prev_slice_indexes = slice_indexes
 
@@ -1511,6 +1522,14 @@ def normalize_data(im,
     # im[mask==0] = 0
     return im
 
+
+def match_histograms(target, ref):
+    # Matches histogram of <target> to histogram of <ref> using SimpleITK
+    target_itk = sitk.GetImageFromArray(target)
+    ref_itk = sitk.GetImageFromArray(ref)
+    hist_matcher = sitk.HistogramMatchingImageFilter()
+    matched = hist_matcher.Execute(target_itk, ref_itk)
+    return sitk.GetArrayFromImage(matched)
 
 def get_inference_patches(path_test, case, input_data, roi, patch_shape, step, normalize=True, norm_type = "zero_one", mode = "cs", num_timepoints = None):
     """

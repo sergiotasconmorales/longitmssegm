@@ -269,4 +269,24 @@ def create_log(path_results, options, filename = "log.txt"):
         f.write("%s : %s\n" % (k,v))
     f.close()
 
+def isevaluable(s):
+    try:
+        eval(s)
+        return True
+    except:
+        return False
+
+def parse_log_file(log_file_path, log_file_name = "log.txt"):
+    f = open(jp(log_file_path, log_file_name))
+    output_dict = {}
+    for x in f:
+        the_key = x.split(":")[0][:-1]
+        the_value = x.split(":")[1][1:]
+        if "\n" in the_value:
+            the_value = the_value.replace("\n", "")
+        if len(the_value)>1:
+            output_dict[the_key] = the_value
+    f.close()
+    return output_dict
+
 # -------------------------------------------------------------------------------------------------------
