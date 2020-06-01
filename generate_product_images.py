@@ -5,8 +5,8 @@ from os.path import join as jp
 from ms_segmentation.general.general import save_image, list_folders, list_files_with_name_containing
 from ms_segmentation.data_generation.patch_manager_3d import normalize_data
 
-path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\isbi_train'
-cross_sectional = False
+path_base = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\cross_sectional'
+cross_sectional = True
 
 patients = list_folders(path_base)
 if cross_sectional:

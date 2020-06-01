@@ -34,15 +34,15 @@ from sklearn.metrics import jaccard_score as jsc
 from ms_segmentation.evaluation.metrics import compute_metrics
 
 
-debug = False 
+debug = True 
 if debug:
     print("Debugging mode ...")
 
 
 options = {}
 options['val_split']  = 0.2
-options['input_data'] = ['flair', 'mprage', 'pd', 't2']
-#options['input_data'] = ['flair', 'pd_times_fl', 't2_times_fl', 't1_inv_times_fl', 'sum_times_fl']
+options['input_data'] = ['flair']
+#options['input_data'] = ['pd_times_flair', 't2_times_flair', 't1_inv_times_flair', 'sum_times_flair']
 options['gt'] = 'mask1'
 options['brain_mask'] = 'brain_mask'
 options['num_classes'] = 2
@@ -70,13 +70,13 @@ all_patients = list_folders(path_data)
 
 
 if(debug):
-    experiment_name = "dummy_UNet_ConvLSTM3D"
+    experiment_name = "dummy_UNetLongit"
 else:
-    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvLSTM3D")
+    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetLongit")
 
-experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-05-27_18_16_51'
-fold = 1
-for curr_test_patient in all_patients[1:]:
+#experiment_name = 'CROSS_VALIDATION_UNetLongit_2020-05-26_11_12_15'
+fold = 0
+for curr_test_patient in all_patients:  #ACHTUUUUUNG
     fold += 1
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
@@ -121,7 +121,8 @@ for curr_test_patient in all_patients[1:]:
                                         norm_type=options['norm_type'],
                                         sampling_type=options['patch_sampling'],
                                         resample_epoch=options['resample_each_epoch'],
-                                        num_timepoints = options['num_timepoints'])
+                                        num_timepoints = options['num_timepoints'],
+                                        histogram_matching=True)
 
     #hola = training_dataset.__getitem__(2200)
 
@@ -138,7 +139,8 @@ for curr_test_patient in all_patients[1:]:
                                             normalize=options['normalize'],
                                             norm_type=options['norm_type'],
                                             sampling_type=options['patch_sampling'],
-                                            num_timepoints = options['num_timepoints'])
+                                            num_timepoints = options['num_timepoints'],
+                                            histogram_matching=True)
 
     validation_dataloader = DataLoader(validation_dataset, 
                                     batch_size=options['batch_size'],
@@ -181,7 +183,7 @@ for curr_test_patient in all_patients[1:]:
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
     #lesion_model = UNet_ConvGRU_3D_1(input_size=len(options['input_data']), output_size=options['num_classes'])
-    lesion_model = UNet_ConvLSTM_3D_hope(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_3D_alt(n_channels=options['num_timepoints'], n_classes=options['num_classes'], bilinear=False)
     #lesion_model = UNet3D_1(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
     # lesion_model.cuda()
@@ -263,8 +265,8 @@ for curr_test_patient in all_patients[1:]:
                     # x = [batch_size, num_timepoints, num_modalities, patch_dim1, patch_dim2, patch_dim3]
                     # y = [batch_size, num_timepoints, 1, patch_dim1, patch_dim2, patch_dim3]
         
-                    x = data.to(device)
-                    y = target[:,-1,:,:,:,:].to(device) #Take GT in the middle
+                    x = data.squeeze(axis = 2).to(device)
+                    y = target[:,-2,:,:,:,:].to(device)
                     
                     #save_batch(x, y)
 
@@ -321,8 +323,8 @@ for curr_test_patient in all_patients[1:]:
             for b_v, (data, target) in enumerate(validation_dataloader):
                     
                     print("Validation. Mini-batch ", b_v+1, "/", len(validation_dataloader))
-                    x = data.to(device)
-                    y = target[:,-1,:,:,:,:].to(device)
+                    x = data.squeeze(axis = 2).to(device)
+                    y = target[:,-2,:,:,:,:].to(device)
                     
                     # infer the current batch 
                     with torch.no_grad(): #Don't consider the gradients
@@ -418,38 +420,20 @@ for curr_test_patient in all_patients[1:]:
 
 
 
-    def divide_inference_slices(all_slices, desired_timepoints):
-        #Format for all_slices is (num_slices, num_timepoints, num_modalities, Height, Width)
-        _, num_timepoints, _, _, _, _ = all_slices.shape
+    def get_groups(all_patches, total_timepoints, desired_timepoints):
         
-        if(num_timepoints == desired_timepoints): #Special case if number of timepoints coincides with desired number of timepoints
-            #TODO: special case -> How to predict timepoint in the middle
-            pass
+        # Squeeze
+        all_patches = all_patches.squeeze()
 
-        list_inference_patches = []
-        indexes = []
-        num_forward = num_timepoints - desired_timepoints + 1
-        for i in range(num_forward):
-            list_inference_patches.append(all_slices[:,i:i+desired_timepoints,:,:,:,:])
-            indexes.append(i+desired_timepoints)
+        # Apply time-point padding -> Replicate first and last timepoints in order to sample properly
+        all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0)), "edge")
 
-        all_slices = np.flip(all_slices, axis = 1).copy()
-        num_backward = num_forward
-        if(num_timepoints%2 == 0): #even
-            init = 0
-        else: #odd
-            init = 1
-        for i in range(init,num_backward):
-            list_inference_patches.append(all_slices[:,i:i+desired_timepoints,:,:,:,:])
-            if(num_timepoints%2==0): #even
-                indexes.append(i+1)
-            else:
-                indexes.append(i)
-        
-        sorted_indexes = np.argsort(indexes)
-        sorted_list_inference_patches = [list_inference_patches[k] for k in sorted_indexes]
+        #Slice timepoints 
+        output_groups = []
+        for i in range(1, tot_timepoints+1):
+            output_groups.append(all_patches[:,i-1:i+2, :, : ,:])
 
-        return sorted_list_inference_patches
+        return output_groups
 
 
 
@@ -477,7 +461,7 @@ for curr_test_patient in all_patients[1:]:
                                                 mode = "l",
                                                 num_timepoints=tot_timepoints)
 
-        inf_patches_sets = divide_inference_slices(infer_patches, options['num_timepoints'])
+        inf_patches_sets = get_groups(infer_patches, tot_timepoints, options['num_timepoints']) #group patches to predict every timepoint
 
 
         batch_size = options['batch_size']
