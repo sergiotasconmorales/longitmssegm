@@ -34,7 +34,7 @@ from sklearn.metrics import accuracy_score as acc
 from ms_segmentation.evaluation.metrics import compute_metrics
 from torch.optim import Adadelta, Adam
 
-debug = False
+debug = True
 
 options = {}
 options['val_split']  = 0.2
@@ -68,6 +68,7 @@ all_patients = list_folders(path_data)
 
 if(debug):
     experiment_name = "dummy_experiment_CV_3DUNet"
+    print("Debug mode: ON")
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNet3D")
 

@@ -23,7 +23,7 @@ from medpy.io import load
 from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime, PatchLoader3DTimeLoadAll, PatchLoader3DLoadAll, \
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
-from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_encoder#, UNet3D_1, UNet3D_2
+from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_encoder_v2, UNet_3D_double_encoder#, UNet3D_1, UNet3D_2
 from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_hope
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -34,7 +34,7 @@ from sklearn.metrics import jaccard_score as jsc
 from ms_segmentation.evaluation.metrics import compute_metrics
 
 
-debug = True 
+debug = False 
 if debug:
     print("Debugging mode ...")
 
@@ -47,7 +47,7 @@ options['gt'] = 'mask1'
 options['brain_mask'] = 'brain_mask'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
-options['sampling_step'] = (14,14,14)
+options['sampling_step'] = (16,16,16)
 options['normalize'] = True 
 options['norm_type'] = 'zero_one'
 options['batch_size'] = 16
@@ -70,13 +70,13 @@ all_patients = list_folders(path_data)
 
 
 if(debug):
-    experiment_name = "dummy_UNet_ConvLSTM3D"
+    experiment_name = "dummy_UNet_3D_double_enc"
 else:
-    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetConvLSTM3D")
+    experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetDoubleEnc")
 
-#experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-05-27_18_16_51'
-fold = 0
-for curr_test_patient in all_patients:
+experiment_name = 'CROSS_VALIDATION_UNetDoubleEnc_2020-06-01_16_49_53'
+fold = 2
+for curr_test_patient in all_patients[2:]:
     fold += 1
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
@@ -96,7 +96,7 @@ for curr_test_patient in all_patients:
 
 
     # Organize the data in a dictionary 
-    input_dictionary = create_training_validation_sets(options, dataset_mode="l", pad_repeat=False)
+    input_dictionary = create_training_validation_sets(options, dataset_mode="l", pad_repeat=True)
 
     # Create training, validation and test patches
 
@@ -180,13 +180,13 @@ for curr_test_patient in all_patients:
     # 2 input channels (FLAIR and T1)
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
-    #lesion_model = UNet_3D_double_encoder(n_channels_t=options['num_timepoints'], n_channels_m=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
-    lesion_model = UNet_ConvLSTM_3D_hope(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_3D_double_encoder_v2(n_channels_t=options['num_timepoints'], n_channels_m=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    #lesion_model = UNet_ConvLSTM_3D_hope(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
     #lesion_model = torch.cat([x3_1, x3_2], dim=1))(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
-    lesion_model.cuda()
-    input_tensor = torch.rand(16, 3, 4, 32, 32, 32).cuda()
-    pred = lesion_model(input_tensor)
+    #lesion_model.cuda()
+    #input_tensor = torch.rand(16, 3, 4, 32, 32, 32).cuda()
+    #pred = lesion_model(input_tensor)
 
 
     options['model_name'] = lesion_model.__class__.__name__
@@ -264,7 +264,7 @@ for curr_test_patient in all_patients:
                     # y = [batch_size, num_timepoints, 1, patch_dim1, patch_dim2, patch_dim3]
         
                     x = data.to(device)
-                    y = target[:,-1,:,:,:,:].to(device) #Take GT in the middle
+                    y = target[:,0,:,:,:,:].to(device) # 0 because target already has TP in the middle only
                     
                     #save_batch(x, y)
 
@@ -306,9 +306,12 @@ for curr_test_patient in all_patients:
                     pred_labels = pred.detach().cpu().numpy().astype('float32')
                     pred_labels = np.argmax(pred_labels, axis=1).reshape(-1).astype(np.uint8)
                     batch_jacc = jsc(pred_labels,lbl, average = 'binary')
-                    print("Loss: ", loss.item())
-                    print("Training - Batch JSC: ", batch_jacc)
-                    print("Num 1s: ", len(pred_labels[pred_labels>0]))
+                    print("**Epoch:** ", epoch)
+                    print("Training Loss: ", loss.item(), end = ", ")
+                    print("Training - Batch JSC: ", batch_jacc, end = ", ")
+                    #print("Loss: ", loss.item())
+                    #print("Training - Batch JSC: ", batch_jacc)
+                    #print("Num 1s: ", len(pred_labels[pred_labels>0]))
                     jaccs_train.append(batch_jacc)
                     
                     
@@ -322,7 +325,7 @@ for curr_test_patient in all_patients:
                     
                     print("Validation. Mini-batch ", b_v+1, "/", len(validation_dataloader))
                     x = data.to(device)
-                    y = target[:,-1,:,:,:,:].to(device)
+                    y = target[:,0,:,:,:,:].to(device) # 0 because target already has TP in the middle only
                     
                     # infer the current batch 
                     with torch.no_grad(): #Don't consider the gradients
@@ -354,6 +357,8 @@ for curr_test_patient in all_patients:
                         pred_labels = pred.detach().cpu().numpy().astype('float32')
                         pred_labels = np.argmax(pred_labels, axis=1).reshape(-1).astype(np.uint8)
                         batch_jacc = jsc(pred_labels,lbl, average = 'binary')
+                        print("**Epoch:** ", epoch)
+                        print("Validation Loss: ", loss.item(), end = ", ")
                         print("Validation - Batch JSC: ", batch_jacc)
                         jaccs_val.append(batch_jacc)
             
@@ -451,8 +456,101 @@ for curr_test_patient in all_patients:
 
         return sorted_list_inference_patches
 
+    def get_groups(all_patches, total_timepoints, desired_timepoints):
+        
+        # Squeeze
+        all_patches = all_patches.squeeze()
+
+        # Apply time-point padding -> Replicate first and last timepoints in order to sample properly
+        all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0), (0,0)), "edge")
+
+        #Slice timepoints 
+        output_groups = []
+        for i in range(1, tot_timepoints+1):
+            output_groups.append(all_patches[:,i-1:i+2, :, :, : ,:])
+
+        return output_groups
 
 
+
+    #Evaluate all test images
+    columns = columns = compute_metrics(None, None, labels_only=True)
+    df = pd.DataFrame(columns = columns)
+
+    test_images = [curr_test_patient]
+    i_row=0
+    cnt=0
+    path_test = options['test_path']
+    for case in test_images:
+        print(cnt+1, "/", len(test_images))
+        scan_path = jp(path_test, case)
+
+        tot_timepoints = len(list_files_with_name_containing(jp(path_test, case), "brain_mask", "nii.gz"))
+
+        infer_patches, coordenates = get_inference_patches(path_test=path_test,
+                                                case = case,
+                                                input_data=options['input_data'],
+                                                roi=options['brain_mask'],
+                                                patch_shape=options['patch_size'],
+                                                step=options['sampling_step'],
+                                                normalize=options['normalize'],
+                                                mode = "l",
+                                                num_timepoints=tot_timepoints)
+
+        inf_patches_sets = get_groups(infer_patches, tot_timepoints, options['num_timepoints']) #group patches to predict every timepoint
+
+
+        batch_size = options['batch_size']
+
+        for i_timepoint in range(len(inf_patches_sets)):
+            infer_patches = inf_patches_sets[i_timepoint]
+
+            lesion_out = build_image(infer_patches, lesion_model, device, options['num_classes'], options)
+
+            scan_numpy = nib.load(jp(path_test, case, os.listdir(scan_path)[0])).get_fdata()
+            all_probs = np.zeros((scan_numpy.shape[0], scan_numpy.shape[1], scan_numpy.shape[2], options['num_classes']))
+
+            for i in range(options['num_classes']):
+                all_probs[:,:,:,i] = reconstruct_image(lesion_out[:,i], 
+                                                coordenates, 
+                                                scan_numpy.shape)
+                                    
+            labels = np.argmax(all_probs, axis=3).astype(np.uint8)
+
+            #shim_overlay(scan_numpy, labels, 16, alpha=0.6)
+
+            #Compute metrics
+            list_gt = get_dictionary_with_paths([case], path_test, options["gt"])[case]
+
+            labels_gt = nib.load(list_gt[i_timepoint][0]).get_fdata().astype(np.uint8)  #GT  
+
+            #DSC
+            #dsc = compute_dices(labels_gt.flatten(), labels.flatten())
+            metrics = compute_metrics(labels_gt, labels)
+
+            df.loc[i_row] = list(metrics.values())
+            i_row += 1
+            #Save result
+            img_nib = nib.Nifti1Image(labels, np.eye(4))
+            create_folder(jp(path_segmentations, case))
+            nib.save(img_nib, jp(path_segmentations, case, case+"_"+ str(i_timepoint+1).zfill(2) +"_segm.nii.gz"))
+
+            cnt += 1
+
+    df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
+    print(df.mean())
+    create_log(path_results, options)
+
+
+
+
+
+
+
+
+
+
+"""
     #Evaluate all test images
     columns = columns = compute_metrics(None, None, labels_only=True)
     df = pd.DataFrame(columns = columns)
@@ -520,4 +618,4 @@ for curr_test_patient in all_patients:
     df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
     print(df.mean())
     create_log(path_results, options)
-
+"""

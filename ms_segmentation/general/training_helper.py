@@ -76,7 +76,7 @@ def exp_lr_scheduler(optimizer, epoch, init_lr=0.001, lr_decay_epoch=7):
     return optimizer
 
 
-def create_training_validation_sets(options, dataset_mode="cs"):
+def create_training_validation_sets(options, dataset_mode="cs", pad_repeat = False):
     """
     Generate the input dictionaries for training and validation
     Parameters
@@ -124,6 +124,8 @@ def create_training_validation_sets(options, dataset_mode="cs"):
             validation_data[0] = training_data[0]
             training_data = temp          
 
+    options['training_samples'] = training_data
+    options['validation_samples'] = validation_data
 
 
     input_dictionary = {}
@@ -144,17 +146,17 @@ def create_training_validation_sets(options, dataset_mode="cs"):
 
     else: #If longitudinal data, load several images for each case
         #Training
-        input_dictionary['input_train_data'] = get_dictionary_with_paths(training_data, options['training_path'], options['input_data'])    
-        input_dictionary['input_train_labels'] = get_dictionary_with_paths(training_data, options['training_path'], options['gt'])
-        input_dictionary['input_train_rois'] = get_dictionary_with_paths(training_data, options['training_path'], options['brain_mask'])
+        input_dictionary['input_train_data'] = get_dictionary_with_paths(training_data, options['training_path'], options['input_data'], pad_repeat=pad_repeat)    
+        input_dictionary['input_train_labels'] = get_dictionary_with_paths(training_data, options['training_path'], options['gt'],pad_repeat=pad_repeat)
+        input_dictionary['input_train_rois'] = get_dictionary_with_paths(training_data, options['training_path'], options['brain_mask'], pad_repeat=pad_repeat)
         #Validation
-        input_dictionary['input_val_data'] = get_dictionary_with_paths(validation_data, options['training_path'], options['input_data'])    
-        input_dictionary['input_val_labels'] = get_dictionary_with_paths(validation_data, options['training_path'], options['gt'])
-        input_dictionary['input_val_rois'] = get_dictionary_with_paths(validation_data, options['training_path'], options['brain_mask'])
+        input_dictionary['input_val_data'] = get_dictionary_with_paths(validation_data, options['training_path'], options['input_data'], pad_repeat=pad_repeat)    
+        input_dictionary['input_val_labels'] = get_dictionary_with_paths(validation_data, options['training_path'], options['gt'], pad_repeat=pad_repeat)
+        input_dictionary['input_val_rois'] = get_dictionary_with_paths(validation_data, options['training_path'], options['brain_mask'], pad_repeat=pad_repeat)
         #Test
-        input_dictionary['input_test_data'] = get_dictionary_with_paths(test_scans, options['test_path'], options['input_data'])    
-        input_dictionary['input_test_labels'] = get_dictionary_with_paths(test_scans, options['test_path'], options['gt'])
-        input_dictionary['input_test_rois'] = get_dictionary_with_paths(test_scans, options['test_path'], options['brain_mask'])
+        input_dictionary['input_test_data'] = get_dictionary_with_paths(test_scans, options['test_path'], options['input_data'], pad_repeat=pad_repeat)    
+        input_dictionary['input_test_labels'] = get_dictionary_with_paths(test_scans, options['test_path'], options['gt'], pad_repeat=pad_repeat)
+        input_dictionary['input_test_rois'] = get_dictionary_with_paths(test_scans, options['test_path'], options['brain_mask'], pad_repeat=pad_repeat)
         
 
     return input_dictionary
@@ -350,4 +352,3 @@ def tversky_loss3D(input, target, alpha, beta):
     tversky_total = -1*torch.sum(tversky_eso)/tversky_eso.size(0) # Divide by batch size
 
     return tversky_total
-    return 0

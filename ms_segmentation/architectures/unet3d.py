@@ -49,7 +49,7 @@ class Down3D_alt(nn.Module):
 
 class Up3D_alt(nn.Module):
     """Upscaling then double conv"""
-
+    # Lines 63(64), 76 (77) to change to hybrid 
     def __init__(self, in_channels, out_channels, bilinear=True):
         super().__init__()
 
@@ -60,20 +60,21 @@ class Up3D_alt(nn.Module):
             self.up = nn.ConvTranspose3d(in_channels // 2, in_channels // 2, kernel_size=2, stride=2)
 
         self.conv1 = SingleConv3D(in_channels, in_channels//2)
-        self.conv2 = SingleConv3D(in_channels, out_channels)
+        self.conv2 = SingleConv3D(in_channels, out_channels) #normal double skip connections
+        #self.conv2 = SingleConv3D(in_channels//2, out_channels)
 
     def forward(self, x1, x2, x3):
         x1 = self.up(x1)
         # input is CHW
-        diffY = torch.tensor([x3.size()[2] - x1.size()[2]])
-        diffX = torch.tensor([x3.size()[3] - x1.size()[3]])
+        diffY = torch.tensor([x2.size()[2] - x1.size()[2]])
+        diffX = torch.tensor([x2.size()[3] - x1.size()[3]])
 
         x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
                         diffY // 2, diffY - diffY // 2])
-        x = torch.cat([x3, x1], dim=1) # First skip connection (concatenation)
+        x = torch.cat([x2, x1], dim=1) # First skip connection (concatenation)
         x4 = self.conv1(x)
         #x5 = self.conv2(x3+x4) # Second skip connection (sum)
-        x5 = self.conv2(torch.cat([x2,x4], dim=1)) # second skip connection (concatenation)
+        x5 = self.conv2(torch.cat([x3,x4], dim=1)) # second skip connection (concatenation) - green
         return x5
 
 
@@ -152,317 +153,6 @@ class OutConv3D(nn.Module):
 # ------------------------------------------------------------------------------------------
 # Basic UNet3D
 # ------------------------------------------------------------------------------------------
-
-
-# class Unet_orig(nn.Module):
-#     """
-#     Basic U-net model.
-#     Skip connections by sums instead of concatenations
-#     Subsampling by convolutions
-#     """
-
-#     def __init__(self, input_size, output_size):
-
-#         super(Unet_orig, self).__init__()
-
-#         # conv1 down
-#         self.conv1 = nn.Conv3d(in_channels=input_size,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 1
-#         self.pool1 = nn.Conv3d(in_channels=32, #Max pooling implemented as a convolution. Allows to have different shapes
-#                                out_channels=32,
-#                                kernel_size=2,
-#                                stride=2)
-#         # conv2 down
-#         self.conv2 = nn.Conv3d(in_channels=32,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 2
-#         self.pool2 = nn.Conv3d(in_channels=64,
-#                                out_channels=64,
-#                                kernel_size=2,
-#                                stride=2)
-#         # conv3 down
-#         self.conv3 = nn.Conv3d(in_channels=64,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 3
-#         self.pool3 = nn.Conv3d(in_channels=128,
-#                                out_channels=128,
-#                                kernel_size=2,
-#                                stride=2)
-#         # conv4 down (latent space)
-#         self.conv4 = nn.Conv3d(in_channels=128,
-#                                out_channels=256,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv4
-#         self.up1 = nn.ConvTranspose3d(in_channels=256,
-#                                       out_channels=128,
-#                                       kernel_size=2,
-#                                       stride=2)        
-#         # conv 5 (add up1 + conv3)
-#         self.conv5 = nn.Conv3d(in_channels=128,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv5
-#         self.up2 = nn.ConvTranspose3d(in_channels=128,
-#                                       out_channels=64,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv6 (add up2 + conv2) 
-#         self.conv6 = nn.Conv3d(in_channels=64,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up 3
-#         self.up3 = nn.ConvTranspose3d(in_channels=64,
-#                                       out_channels=32,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv7 (add up3 + conv1)
-#         self.conv7 = nn.Conv3d(in_channels=32,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # conv8 (classification)
-#         self.conv8 = nn.Conv3d(in_channels=32,
-#                                out_channels=output_size,
-#                                kernel_size=1)
-
-#     def forward(self, x):
-
-#         # encoder
-#         x1 = F.relu(self.conv1(x))
-#         x1p = self.pool1(x1)
-#         x2 = F.relu(self.conv2(x1p))
-#         x2p = self.pool2(x2)
-#         x3 = F.relu(self.conv3(x2p))
-#         x3p = self.pool3(x3)
-        
-#         # latent space
-#         x4 = F.relu(self.conv4(x3p))
-
-#         # decoder
-#         up1 = self.up1(x4)
-#         x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
-#         up2 = self.up2(x5)
-#         x6 = F.relu(self.conv6(up2 + x2))
-#         up3 = self.up3(x6)
-#         x7 = F.relu(self.conv7(up3 + x1))
-        
-#         # output layer (2 classes)
-#         # we use a softmax layer to return probabilities for each class
-#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-#         return out
-
-
-# class UNet3D_1(nn.Module):
-#     """
-#     Basic U-net model
-#     Changes: 
-#         Sub-sampling by max-pooling
-#     """
-
-#     def __init__(self, input_size, output_size):
-
-#         super(UNet3D_1, self).__init__()
-
-#         # conv1 down
-#         self.conv1 = nn.Conv3d(in_channels=input_size,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 1
-#         self.pool1 = nn.MaxPool3d((2,2,2))
-#         # conv2 down
-#         self.conv2 = nn.Conv3d(in_channels=32,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 2
-#         self.pool2 = nn.MaxPool3d((2,2,2))
-#         # conv3 down
-#         self.conv3 = nn.Conv3d(in_channels=64,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 3
-#         self.pool3 = nn.MaxPool3d((2,2,2))
-#         # conv4 down (latent space)
-#         self.conv4 = nn.Conv3d(in_channels=128,
-#                                out_channels=256,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv4
-#         self.up1 = nn.ConvTranspose3d(in_channels=256,
-#                                       out_channels=128,
-#                                       kernel_size=2,
-#                                       stride=2)        
-#         # conv 5 (add up1 + conv3)
-#         self.conv5 = nn.Conv3d(in_channels=128,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv5
-#         self.up2 = nn.ConvTranspose3d(in_channels=128,
-#                                       out_channels=64,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv6 (add up2 + conv2) 
-#         self.conv6 = nn.Conv3d(in_channels=64,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up 3
-#         self.up3 = nn.ConvTranspose3d(in_channels=64,
-#                                       out_channels=32,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv7 (add up3 + conv1)
-#         self.conv7 = nn.Conv3d(in_channels=32,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # conv8 (classification)
-#         self.conv8 = nn.Conv3d(in_channels=32,
-#                                out_channels=output_size,
-#                                kernel_size=1)
-
-#     def forward(self, x):
-
-#         # encoder
-#         x1 = F.relu(self.conv1(x))
-#         x1p = self.pool1(x1)
-#         x2 = F.relu(self.conv2(x1p))
-#         x2p = self.pool2(x2)
-#         x3 = F.relu(self.conv3(x2p))
-#         x3p = self.pool3(x3)
-        
-#         # latent space
-#         x4 = F.relu(self.conv4(x3p))
-
-#         # decoder
-#         up1 = self.up1(x4)
-#         x5 = F.relu(self.conv5(up1 + x3)) # look how layers are added :o
-#         up2 = self.up2(x5)
-#         x6 = F.relu(self.conv6(up2 + x2))
-#         up3 = self.up3(x6)
-#         x7 = F.relu(self.conv7(up3 + x1))
-        
-#         # output layer (2 classes)
-#         # we use a softmax layer to return probabilities for each class
-#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-#         return out
-
-
-# class UNet3D_2(nn.Module):
-#     """
-#     Basic U-net model
-#     Changes: 
-#         Sub-sampling by max-pooling
-#         Concatenation instead of sum for skip connections
-#     """
-
-#     def __init__(self, input_size, output_size):
-
-#         super(UNet3D_2, self).__init__()
-
-#         # conv1 down
-#         self.conv1 = nn.Conv3d(in_channels=input_size,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 1
-#         self.pool1 = nn.MaxPool3d((2,2,2))
-#         # conv2 down
-#         self.conv2 = nn.Conv3d(in_channels=32,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 2
-#         self.pool2 = nn.MaxPool3d((2,2,2))
-#         # conv3 down
-#         self.conv3 = nn.Conv3d(in_channels=64,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # max-pool 3
-#         self.pool3 = nn.MaxPool3d((2,2,2))
-#         # conv4 down (latent space)
-#         self.conv4 = nn.Conv3d(in_channels=128,
-#                                out_channels=256,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv4
-#         self.up1 = nn.ConvTranspose3d(in_channels=256,
-#                                       out_channels=128,
-#                                       kernel_size=2,
-#                                       stride=2)        
-#         # conv 5 (add up1 + conv3)
-#         self.conv5 = nn.Conv3d(in_channels=256,
-#                                out_channels=128,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up-sample conv5
-#         self.up2 = nn.ConvTranspose3d(in_channels=128,
-#                                       out_channels=64,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv6 (add up2 + conv2) 
-#         self.conv6 = nn.Conv3d(in_channels=128,
-#                                out_channels=64,
-#                                kernel_size=3,
-#                                padding=1)
-#         # up 3
-#         self.up3 = nn.ConvTranspose3d(in_channels=64,
-#                                       out_channels=32,
-#                                       kernel_size=2,
-#                                       stride=2)
-#         # conv7 (add up3 + conv1)
-#         self.conv7 = nn.Conv3d(in_channels=64,
-#                                out_channels=32,
-#                                kernel_size=3,
-#                                padding=1)
-#         # conv8 (classification)
-#         self.conv8 = nn.Conv3d(in_channels=32,
-#                                out_channels=output_size,
-#                                kernel_size=1)
-
-#     def forward(self, x):
-
-#         # encoder
-#         x1 = F.relu(self.conv1(x))
-#         x1p = self.pool1(x1)
-#         x2 = F.relu(self.conv2(x1p))
-#         x2p = self.pool2(x2)
-#         x3 = F.relu(self.conv3(x2p))
-#         x3p = self.pool3(x3)
-        
-#         # latent space
-#         x4 = F.relu(self.conv4(x3p))
-
-#         # decoder
-#         up1 = self.up1(x4)
-#         x5 = F.relu(self.conv5(torch.cat([up1, x3], dim=1))) 
-#         up2 = self.up2(x5)
-#         x6 = F.relu(self.conv6(torch.cat([up2, x2], dim=1)))
-#         up3 = self.up3(x6)
-#         x7 = F.relu(self.conv7(torch.cat([up3, x1], dim=1)))
-        
-#         # output layer (2 classes)
-#         # we use a softmax layer to return probabilities for each class
-#         out = F.softmax(self.conv8(x7), dim=1) #Dim 1 where to do the softmax. I have output [16 (batches),2 (multimodal),32x32x32 (patch size)], so I'm telling to do the softmax in the (2). For
-#         #For the project I will have [16, 4, 32x32x32] because I have 4 classes (background, CSF, WM, GM)
-#         return out
-
 
 class UNet_3D_double_skip_hybrid(nn.Module):
     """
@@ -550,3 +240,135 @@ class UNet_3D_alt(nn.Module):
         return logits 
 
 
+class UNet_3D_double_encoder(nn.Module):
+    """
+    Basic UNet with double encoder (longitudinal + cross-sectional)
+    Changes: 
+        Blocks implemented according to class blocks defined in unet3d file. Double convolutions used along with BN
+    """
+
+    def __init__(self, n_channels_t, n_channels_m, n_classes, bilinear=True):
+        # n_channels_t -> Number of timepoints
+        # n_channels_m -> Number of sequences
+        super(UNet_3D_double_encoder, self).__init__()
+
+        self.n_channels1 = n_channels_t
+        self.n_channels2 = n_channels_m
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        # first encoder
+        self.inc_e1 = DoubleConv3D(n_channels_t, 16)
+        self.down1_e1 = Down3D(16, 32)
+        self.down2_e1 = Down3D(32, 64)
+        self.down3_e1 = Down3D(64, 128)
+        self.down4_e1 = Down3D(128, 128)
+
+        # second encoder
+        self.inc_e2 = DoubleConv3D(n_channels_m, 16)
+        self.down1_e2 = Down3D(16, 32)
+        self.down2_e2 = Down3D(32, 64)
+        self.down3_e2 = Down3D(64, 128)
+        self.down4_e2 = Down3D(128, 128)
+
+        # decoder
+        self.up1 = Up3D(512, 128, bilinear)
+        self.up2 = Up3D(256, 64, bilinear)
+        self.up3 = Up3D(128, 32, bilinear)
+        self.up4 = Up3D(64, 16, bilinear)
+        self.outc = OutConv3D(16, n_classes)
+
+    def forward(self, x):
+        #x eg (10,3,4,32,32,32)
+
+        # encoder 1
+        # input to encoder 1: (10,3,32,32,32) -> Only flair, all timepoints
+        x1_1 = self.inc_e1(x[:,:,0,:,:,:]) # (10,16,32,32,32)
+        x2_1 = self.down1_e1(x1_1) # (10,32,16,16,16)
+        x3_1 = self.down2_e1(x2_1) # (10,64,8,8,8)
+        x4_1 = self.down3_e1(x3_1) # (10,128,4,4,4)
+        x5_1 = self.down4_e1(x4_1) # (10,128,2,2,2)
+
+        # encoder 2
+        # input to encoder 2: (10,4,32,32,32) -> 4 sequences, only timepoint in the middle
+        x1_2 = self.inc_e2(x[:,1,:,:,:,:]) # (10,16,32,32,32)
+        x2_2 = self.down1_e2(x1_2) # (10,32,16,16,16)
+        x3_2 = self.down2_e2(x2_2) # (10,64,8,8,8)
+        x4_2 = self.down3_e2(x3_2) # (10,128,4,4,4)
+        x5_2 = self.down4_e2(x4_2) # (10,128,2,2,2)
+
+        # decoder
+        x = self.up1(torch.cat([x5_1, x5_2], dim = 1), torch.cat([x4_1, x4_2], dim=1)) # (10,128,4,4,4)
+        x = self.up2(x, torch.cat([x3_1, x3_2], dim=1)) # (10,64,8,8,8)
+        x = self.up3(x, torch.cat([x2_1, x2_2], dim=1)) # (10,32,16,16,16)
+        x = self.up4(x, torch.cat([x1_1, x1_2], dim=1)) # (10,32,32,32,32)
+
+        logits = F.softmax(self.outc(x), dim=1) # (10,2,32,32,32)
+        return logits 
+
+
+class UNet_3D_double_encoder_v2(nn.Module):
+    """
+    Basic UNet with double encoder (longitudinal + cross-sectional)
+    Changes: 
+        Blocks implemented according to class blocks defined in unet3d file. Double convolutions used along with BN
+    """
+
+    def __init__(self, n_channels_t, n_channels_m, n_classes, bilinear=True):
+        # n_channels_t -> Number of timepoints
+        # n_channels_m -> Number of sequences
+        super(UNet_3D_double_encoder_v2, self).__init__()
+
+        self.n_channels1 = n_channels_t
+        self.n_channels2 = n_channels_m
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        # first encoder
+        self.inc_e1 = DoubleConv3D(n_channels_t, 32)
+        self.down1_e1 = Down3D(32, 64)
+        self.down2_e1 = Down3D(64, 128)
+        self.down3_e1 = Down3D(128, 256)
+        self.down4_e1 = Down3D(256, 256)
+
+        # second encoder
+        self.inc_e2 = DoubleConv3D(n_channels_m, 32)
+        self.down1_e2 = Down3D(32, 64)
+        self.down2_e2 = Down3D(64, 128)
+        self.down3_e2 = Down3D(128, 256)
+        self.down4_e2 = Down3D(256, 256)
+
+        # decoder
+        self.up1 = Up3D(1024, 256, bilinear)
+        self.up2 = Up3D(512, 128, bilinear)
+        self.up3 = Up3D(256, 64, bilinear)
+        self.up4 = Up3D(128, 32, bilinear)
+        self.outc = OutConv3D(32, n_classes)
+
+    def forward(self, x):
+        #x eg (10,3,4,32,32,32)
+
+        # encoder 1
+        # input to encoder 1: (10,3,32,32,32) -> Only flair, all timepoints
+        x1_1 = self.inc_e1(x[:,:,0,:,:,:]) # (10,16,32,32,32)
+        x2_1 = self.down1_e1(x1_1) # (10,32,16,16,16)
+        x3_1 = self.down2_e1(x2_1) # (10,64,8,8,8)
+        x4_1 = self.down3_e1(x3_1) # (10,128,4,4,4)
+        x5_1 = self.down4_e1(x4_1) # (10,128,2,2,2)
+
+        # encoder 2
+        # input to encoder 2: (10,4,32,32,32) -> 4 sequences, only timepoint in the middle
+        x1_2 = self.inc_e2(x[:,1,:,:,:,:]) # (10,16,32,32,32)
+        x2_2 = self.down1_e2(x1_2) # (10,32,16,16,16)
+        x3_2 = self.down2_e2(x2_2) # (10,64,8,8,8)
+        x4_2 = self.down3_e2(x3_2) # (10,128,4,4,4)
+        x5_2 = self.down4_e2(x4_2) # (10,128,2,2,2)
+
+        # decoder
+        x = self.up1(torch.cat([x5_1, x5_2], dim = 1), torch.cat([x4_1, x4_2], dim=1)) # (10,128,4,4,4)
+        x = self.up2(x, torch.cat([x3_1, x3_2], dim=1)) # (10,64,8,8,8)
+        x = self.up3(x, torch.cat([x2_1, x2_2], dim=1)) # (10,32,16,16,16)
+        x = self.up4(x, torch.cat([x1_1, x1_2], dim=1)) # (10,32,32,32,32)
+
+        logits = F.softmax(self.outc(x), dim=1) # (10,2,32,32,32)
+        return logits 

@@ -189,7 +189,7 @@ def list_files_with_name_containing(the_path, the_string, the_format):
     files = list_files_with_extension(the_path, the_format)
     return [os.path.join(the_path, f) for f in files if the_string in f]
 
-def get_dictionary_with_paths(scans, the_path, the_names):
+def get_dictionary_with_paths(scans, the_path, the_names, pad_repeat = False):
     """[summary]
     
     Parameters
@@ -211,7 +211,11 @@ def get_dictionary_with_paths(scans, the_path, the_names):
             d[scan] = []
             num_time_points = len(list_files_with_name_containing(os.path.join(the_path, scan), "brain_mask", "nii.gz")) #Flair is always there, so use it as reference
             for i_t in range(num_time_points):
-                d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
+                if pad_repeat and (i_t==0 or i_t==num_time_points-1): #Append twice
+                    d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
+                    d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
+                else:
+                    d[scan].append(filter_list(list_files_with_name_containing(os.path.join(the_path, scan), str(i_t+1).zfill(2), "nii.gz"), the_names))
     return d
 
 def get_dictionary_with_paths_cs(patients, the_path, the_names):
@@ -284,9 +288,24 @@ def parse_log_file(log_file_path, log_file_name = "log.txt"):
         the_value = x.split(":")[1][1:]
         if "\n" in the_value:
             the_value = the_value.replace("\n", "")
-        if len(the_value)>1:
-            output_dict[the_key] = the_value
+        output_dict[the_key] = the_value
     f.close()
     return output_dict
+
+
+def get_groups(all_patches, total_timepoints, desired_timepoints):
+        
+        # Squeeze
+        all_patches = all_patches.squeeze()
+
+        # Apply time-point padding -> Replicate first and last timepoints in order to sample properly
+        all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0)), "edge")
+
+        #Slice timepoints 
+        output_groups = []
+        for i in range(1, total_timepoints+1):
+            output_groups.append(all_patches[:,i-1:i+2, :, : ,:])
+
+        return output_groups
 
 # -------------------------------------------------------------------------------------------------------
