@@ -1035,7 +1035,7 @@ class PatchLoader3DTimeLoadAll(Dataset):
         if self.labels_mode == 'lesion_patch':
             output_labels = np.zeros((len(self.patch_indexes), ), dtype = np.uint8)
 
-        all_labels = np.zeros((len(self.patch_indexes), self.num_timepoints, self.patch_size[0],self.patch_size[1],self.patch_size[2]), dtype=np.uint8)
+        all_labels = np.zeros((len(self.patch_indexes), 1, self.patch_size[0],self.patch_size[1],self.patch_size[2]), dtype=np.uint8)
         
         all_s = [] #To store images from all x timepoints required
         all_l = []
@@ -1054,7 +1054,7 @@ class PatchLoader3DTimeLoadAll(Dataset):
                                                     self.patch_size)]
 
             output_patch = np.zeros(self.input_train_dim, dtype = 'float32') #Array to store output patches
-            output_label = np.zeros(self.input_label_dim, dtype = 'float32') #Array to store output labels
+            output_label = np.zeros(self.input_label_dim, dtype = np.uint8) #Array to store output labels
             ind = 0
 
             #Condition to load new images only if they are different as compared to those for previous idx
@@ -1070,13 +1070,13 @@ class PatchLoader3DTimeLoadAll(Dataset):
                                 self.input_data[im_][i_t][k]).get_data().astype('float32'))
                                         for k in range(self.num_modalities)])
                         all_l.append([self.apply_padding(nib.load(
-                                self.input_labels[im_][i_t][0]).get_data().astype('float32'))])
+                                self.input_labels[im_][i_t][0]).get_data().astype(np.uint8))])
                     else:
                         all_s.append([nib.load(
                                 self.input_data[im_][i_t][k]).get_data().astype('float32')
                                         for k in range(self.num_modalities)])
                         all_l.append([nib.load(
-                                self.input_labels[im_][i_t][0]).get_data().astype('float32')])
+                                self.input_labels[im_][i_t][0]).get_data().astype(np.uint8)])
 
                 if self.normalize:
                     #Apply intensity normalization
@@ -1107,7 +1107,7 @@ class PatchLoader3DTimeLoadAll(Dataset):
                     input_train = np.zeros(self.input_train_dim).astype('float32')
                 if (self.num_timepoints,)+input_label.shape != self.input_label_dim:
                     print('error in label', input_label.shape, self.input_label_dim)
-                    input_label = np.zeros(self.input_label_dim).astype('float32')
+                    input_label = np.zeros(self.input_label_dim).astype(np.uint8)
 
                 if self.transform:
                     input_train, input_label = self.transform([input_train,
@@ -1121,7 +1121,7 @@ class PatchLoader3DTimeLoadAll(Dataset):
                 ind+=1
 
             all_patches[idx,:,:,:,:,:] = output_patch 
-            all_labels[idx,:,:,:,:] = output_label[:,0,:,:,:]
+            all_labels[idx,0,:,:,:] = output_label[1,0,:,:,:] # TIMEPOINT IN THE MIDDLE
 
             if self.labels_mode == 'lesion_patch':
                 output_labels[idx] = int(np.any(all_labels[idx,-1,:,:,:]>0)) #If patch contains any positive voxel, return 1
