@@ -24,7 +24,7 @@ from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime,
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_encoder#, UNet3D_1, UNet3D_2
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_hope
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_encoder
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
@@ -191,7 +191,7 @@ for curr_test_patient in all_patients:
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
     #lesion_model = UNet_3D_double_encoder(n_channels_t=options['num_timepoints'], n_channels_m=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
-    lesion_model = UNet_ConvLSTM_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_ConvLSTM_3D_encoder(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
     #lesion_model = torch.cat([x3_1, x3_2], dim=1))(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
     #lesion_model.cuda()

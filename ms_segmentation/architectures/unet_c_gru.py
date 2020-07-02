@@ -677,16 +677,16 @@ class UNet_ConvLSTM_3D_alt(nn.Module):
 
 
 
-class UNet_ConvLSTM_3D_hope(nn.Module):
+class UNet_ConvLSTM_3D_output_only(nn.Module):
     """
-    
+    UnetConvLSTM as an extension of Novikov 2019, but with LSTM only at the output
     Changes: 
         Blocks implemented according to class blocks defined in unet3d file
     """
 
     def __init__(self, n_channels, n_classes, bilinear=True):
 
-        super(UNet_ConvLSTM_3D_hope, self).__init__()
+        super(UNet_ConvLSTM_3D_output_only, self).__init__()
 
         self.n_channels = n_channels
         self.n_classes = n_classes
@@ -761,5 +761,102 @@ class UNet_ConvLSTM_3D_hope(nn.Module):
         #x = self.convGRU2(x)[0][0].permute(0,2,1,3,4,5) #(5,32,3,32,32,32)
 
         x = x[:,-1,:,:,:,:] # (5,32,32,32,32)
+        logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
+        return logits # (5,2,32,32,32)
+
+
+
+class UNet_ConvLSTM_3D_encoder(nn.Module):
+    """
+    UnetConvLSTM as an extension of Arbelle2019
+    Changes: 
+        Blocks implemented according to class blocks defined in unet3d file
+    """
+
+    def __init__(self, n_channels, n_classes, bilinear=True):
+
+        super(UNet_ConvLSTM_3D_encoder, self).__init__()
+
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
+
+        self.convLSTM1 = ConvLSTM3D(input_size=(32,32,32),
+                                input_dim=n_channels,
+                                hidden_dim=[16],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.conv1 = DoubleConv3D(16, 32)
+
+        self.maxpool = nn.MaxPool3d(2)
+
+        self.convLSTM2= ConvLSTM3D(input_size=(16,16,16),
+                                input_dim=32,
+                                hidden_dim=[64],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.conv2 = DoubleConv3D(64, 128)
+
+        self.convLSTM3 = ConvLSTM3D(input_size=(8,8,8),
+                                input_dim=128,
+                                hidden_dim=[256],
+                                kernel_size=(3,3,3),
+                                num_layers=1,
+                                batch_first = True,
+                                bias = True,
+                                return_all_layers = False)
+        self.conv3 = DoubleConv3D(256, 512)
+
+        self.conv4 = Down3D(512, 512)
+
+        self.up1 = Up3D(1024, 64, bilinear)
+        self.up2 = Up3D(128, 32, bilinear)
+        self.up3 = Up3D(64, 32, bilinear)
+
+        self.outc = OutConv3D(32, n_classes)
+
+
+
+        # Define wrappers
+    def wrapper_conv(self, the_input, layer, out_channels, layer_type= "Down"):
+        num_time_steps = the_input.size(1)
+        if layer_type == "DoubleConv":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-3), the_input.size(-2), the_input.size(-1))).cuda()
+        elif layer_type == "Down":
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), num_time_steps, out_channels, the_input.size(-3)//2, the_input.size(-2)//2, the_input.size(-1)//2)).cuda()
+        else: #layer_type == OutConv
+            the_output = torch.zeros_like(torch.Tensor(the_input.size(0), out_channels, the_input.size(-3), the_input.size(-2), the_input.size(-1))).cuda()
+            the_output = layer(the_input)
+            return the_output
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:,:] = layer(the_input[:,i_tp,:,:,:,:])
+        return the_output
+
+    def wrapper_up(self, the_input1, the_input2, layer, out_channels):
+
+        num_time_steps = the_input1.size(1)
+        the_output = torch.zeros_like(torch.Tensor(the_input1.size(0), num_time_steps, out_channels, int(2*the_input1.size(-3)), int(2*the_input1.size(-2)), int(2*the_input1.size(-1)))).cuda()
+        for i_tp in range(num_time_steps):
+            the_output[:,i_tp,:,:,:,:] = layer(the_input1[:,i_tp,:,:,:,:], the_input2[:,i_tp,:,:,:,:])
+        return the_output
+
+    def forward(self, x):
+        #x eg (5,3,2,32,32,32)
+        x1 = self.wrapper_conv(self.convLSTM1(x) , self.conv1, 32, layer_type = "DoubleConv")
+        x2 = self.wrapper_conv(self.convLSTM2(self.maxpool(x1)) , self.conv2, 128, layer_type = "DoubleConv")
+        x3 = self.wrapper_conv(self.convLSTM3(self.maxpool(x2)) , self.conv3, 512, layer_type = "DoubleConv")
+        x4 = self.wrapper_conv(x3, self.conv4, 512)
+        #
+        x = self.wrapper_up(x4, x3, self.up1, 64) # (5,3,128,4,4,4)
+        x = self.wrapper_up(x, x2, self.up2, 32) # (5,3,64,8,8,8)
+        x = self.wrapper_up(x, x1, self.up3, 32) # (5,3,32,16,16,16)
+
+        x = x[:,-2,:,:,:,:] # (5,32,32,32,32) # Take timepoint in the middle
         logits = F.softmax(self.wrapper_conv(x, self.outc, self.n_classes, layer_type="OutConv"), dim=1)
         return logits # (5,2,32,32,32)
