@@ -62,22 +62,33 @@ options['resample_each_epoch'] = False
 
 
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L'
-path_data = jp(path_base, 'isbi_train')
+path_data = jp(path_base, 'histogram_matched')
+if("histogram_matched" in path_data):
+    for i in range(10):
+        print("Training with histogram matched dataset!!!!!!!!!!!!!!")
 options['path_data'] = path_data
 path_res = jp(path_base, "cross_validation")
 all_patients = list_folders(path_data)
 
-
+validation_images = ['03', '03', '04', '05', '02'] # so that all experiments use the same validation image
 
 if(debug):
     experiment_name = "dummy_UNet_3D_double_enc"
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetDoubleEnc")
 
-experiment_name = 'CROSS_VALIDATION_UNetDoubleEnc_2020-06-01_16_49_53'
-fold = 2
-for curr_test_patient in all_patients[2:]:
+experiment_name = 'CROSS_VALIDATION_UNetDoubleEnc_2020-06-16_10_12_04'
+fold = 4
+for curr_test_patient in all_patients[4:]:
     fold += 1
+    #For cross-validation it is necessary to remove fields so that they do not cause errors in function create_training_validation_sets
+    if "training_path" in options:
+        del options['training_path']
+    if "test_path" in options:
+        del options['test_path']
+
+
+
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
 
@@ -95,20 +106,22 @@ for curr_test_patient in all_patients[2:]:
     create_folder(path_segmentations)
 
 
-    # Organize the data in a dictionary 
-    input_dictionary = create_training_validation_sets(options, dataset_mode="l", pad_repeat=True)
+    # Organize the data in a dictionary  
+    input_dictionary = create_training_validation_sets(options, dataset_mode="l", pad_repeat=True, specific_val=[validation_images[fold-1]])
 
     # Create training, validation and test patches
 
     rotation_angle=5
-    transf = transforms.Compose([   RandomFlipX(),
-                                    RandomFlipY(),
-                                    RandomFlipZ(),
-                                    #RandomRotationXY(rotation_angle),
-                                    #RandomRotationYZ(rotation_angle),
-                                    #RandomRotationXZ(rotation_angle),
-                                    ToTensor3DPatch()
-                                ])
+    options["transforms"] = None
+    #options["transforms"] transforms.Compose([   RandomFlipX(),
+                                #     RandomFlipY(),
+                                #     RandomFlipZ(),
+                                #     #RandomRotationXY(rotation_angle),
+                                #     #RandomRotationYZ(rotation_angle),
+                                #     #RandomRotationXZ(rotation_angle),
+                                #     ToTensor3DPatch()
+                                # ])
+
 
     
     print('Training data: ')
@@ -414,13 +427,15 @@ for curr_test_patient in all_patients[2:]:
     if train_complete:
         plot_learning_curve(train_losses, val_losses, the_title="Learning curve", measure = "Loss (" + options["loss"] + ")", early_stopping = True, filename = jp(path_results, "loss_plot.png"))
         plot_learning_curve(train_jaccs, val_jaccs, the_title="Jaccard plot", measure = "Jaccard", early_stopping = False, filename = jp(path_results, "jaccard_plot.png"))
+        # delete datasets and dataloaders
+        del training_dataset, training_dataloader, validation_dataset, validation_dataloader  
     else:
         try:
             lesion_model.load_state_dict(torch.load(jp(path_models,"checkpoint.pt")))
         except:
             raise ValueError("No model found")
 
-
+    
 
 
     def divide_inference_slices(all_slices, desired_timepoints):
@@ -540,7 +555,6 @@ for curr_test_patient in all_patients[2:]:
     df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
     print(df.mean())
     create_log(path_results, options)
-
 
 
 

@@ -15,7 +15,7 @@ import random
 import numpy as np
 from os.path import join as jp
 import torch.nn.functional as F
-from .general import list_files_with_name_containing, filter_list, get_dictionary_with_paths, get_dictionary_with_paths_cs
+from .general import list_files_with_name_containing, filter_list, get_dictionary_with_paths, get_dictionary_with_paths_cs, save_image
 
 
 class EarlyStopping:
@@ -75,8 +75,24 @@ def exp_lr_scheduler(optimizer, epoch, init_lr=0.001, lr_decay_epoch=7):
 
     return optimizer
 
+def save_batch(x, y):
+    """Function to save a batch of samples with sizes (B, Seq, H, W, D) for images and (B, 1, H, W, D) for labels
 
-def create_training_validation_sets(options, dataset_mode="cs", pad_repeat = False):
+    Parameters
+    ----------
+    x : [type]
+        [description]
+    y : [type]
+        [description]
+    """
+    x_np = x.detach().cpu().numpy() # 16,3,32,32,32
+    y_np = y.detach().cpu().numpy() # 16,1,32,32,32
+    for i_batch in range(x_np.shape[0]):
+        save_image(y_np[i_batch, 0,:,:,:], "label_batch_"+ str(i_batch) +".nii.gz")
+        for i_seq in range(x_np.shape[1]):
+            save_image(x_np[i_batch, i_seq, :, :, :], "img_batch_"+str(i_batch)+ "_seq_"+str(i_seq) + ".nii.gz")
+
+def create_training_validation_sets(options, dataset_mode="cs", pad_repeat = False, specific_val = None):
     """
     Generate the input dictionaries for training and validation
     Parameters
@@ -96,23 +112,29 @@ def create_training_validation_sets(options, dataset_mode="cs", pad_repeat = Fal
                 input_dictionary['input_train_labels']....
 
     """
+
     if 'training_path' in options: #If no cross-validation paths are given
         training_scans = os.listdir(options['training_path'])
     else: #If cross-validation, list of folders is given instead of path
         training_scans = options['training_samples']
         options['training_path'] = options['path_data']
 
-    random.shuffle(training_scans)
+    if(specific_val):
+        validation_data = specific_val
+        training_scans.remove(validation_data[0])
+        training_data = training_scans.copy()
+    else:
+        random.shuffle(training_scans)
+
+        t_d = int(len(training_scans) * (1 - options['val_split']))
+        training_data = training_scans[:t_d] #Training images
+        validation_data = training_scans[t_d:] #Validation images
 
     if 'test_path' in options:
         test_scans = os.listdir(options['test_path']) #Test images
     else: #If cross-validation, list of folders is given instead of path
         test_scans = options['test_samples']
         options['test_path'] = options['path_data']
-
-    t_d = int(len(training_scans) * (1 - options['val_split']))
-    training_data = training_scans[:t_d] #Training images
-    validation_data = training_scans[t_d:] #Validation images
 
     # add condition to modify distribution if 02 is validation when 01 is test or if 01 is validation when 02 is test
     if len(validation_data) == 1 and len(test_scans)==1:

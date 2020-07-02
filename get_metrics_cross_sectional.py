@@ -45,7 +45,7 @@ for i_exp, exp in enumerate(all_experiments):
                     if post_processing_type=='remove_small':
                         labels_out = cc3d.connected_components(curr_pred_img)
                         for i_cc in np.unique(labels_out):
-                            if len(labels_out[labels_out == i_cc]) < min_area:
+                            if len(labels_out[labels_out == i_cc]) <= min_area:
                                 curr_pred_img[labels_out == i_cc] = 0
                     else:
                         raise ValueError('Unknown post-processing type')

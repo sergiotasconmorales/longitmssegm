@@ -14,6 +14,7 @@ import os
 import glob
 import nibabel as nib
 import numpy as np
+import pickle
 from datetime import datetime
 from os.path import join as jp
 
@@ -251,6 +252,40 @@ def cls():
     """
     os.system('cls||clear')
 
+def save_this(elems_to_save, the_path, filename):
+    """Function to save objects using pickle
+
+    Parameters
+    ----------
+    elems_to_save : [type]
+        [description]
+    the_path : [type]
+        [description]
+    filename : [type]
+        [description]
+    """
+    with open(os.path.join(the_path, filename + ".pkl"), "wb") as f:
+        pickle.dump(elems_to_save, f)
+
+def load_this(the_path, filename):
+    """Function to load elements using pickle
+
+    Parameters
+    ----------
+    the_path : [type]
+        [description]
+    filename : [type]
+        [description]
+
+    Returns
+    -------
+    [type]
+        [description]
+    """
+    with open(os.path.join(the_path, filename+".pkl"), "rb") as f:
+        elems = pickle.load(f)
+    return elems
+
 def save_image(the_array, the_path, orientation="RAI"):
     """Function to save a numpy array as an image. Name and format are specified in <the_path>
     
@@ -293,18 +328,24 @@ def parse_log_file(log_file_path, log_file_name = "log.txt"):
     return output_dict
 
 
-def get_groups(all_patches, total_timepoints, desired_timepoints):
+def get_groups(all_patches, total_timepoints, desired_timepoints, both_time_and_seq=False):
         
         # Squeeze
         all_patches = all_patches.squeeze()
 
         # Apply time-point padding -> Replicate first and last timepoints in order to sample properly
-        all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0)), "edge")
+        if both_time_and_seq:
+            all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0), (0,0)), "edge")
+        else:
+            all_patches = np.pad(all_patches,((0,0), (1,1), (0,0), (0,0), (0,0)), "edge")
 
         #Slice timepoints 
         output_groups = []
         for i in range(1, total_timepoints+1):
-            output_groups.append(all_patches[:,i-1:i+2, :, : ,:])
+            if both_time_and_seq:
+                output_groups.append(all_patches[:,i-1:i+2, :, :, : ,:])
+            else:
+                output_groups.append(all_patches[:,i-1:i+2, :, : ,:])
 
         return output_groups
 
