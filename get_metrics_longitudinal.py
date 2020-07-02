@@ -10,6 +10,7 @@ from ms_segmentation.evaluation.metrics import compute_metrics
 last_only = True
 
 exp_folders = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation'
+gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\histogram_matched'
 
 gt_list = ['mask1', 'mask2']
 
@@ -21,7 +22,7 @@ for i_exp, exp in enumerate(all_experiments):
     print("Curr. exp: ", exp, "(", i_exp+1, "/", len(all_experiments), ")")
     for gt_curr in gt_list:
         experiment_folder = jp(exp_folders, exp)
-        gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\isbi_train'
+        #gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\isbi_train'
         gt_name = gt_curr
         patients = list_folders(gt_folder)
         post_processing = True

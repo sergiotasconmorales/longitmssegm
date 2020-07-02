@@ -16,7 +16,7 @@ import torch
 import nibabel as nib
 import numpy as np  
 import pandas as pd
-from ms_segmentation.general.general import create_folder, list_folders, save_image, get_experiment_name, create_log, cls, get_dictionary_with_paths
+from ms_segmentation.general.general import print_line, save_this, create_folder, list_folders, save_image, get_experiment_name, create_log, cls, get_dictionary_with_paths
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
@@ -34,15 +34,15 @@ from sklearn.metrics import accuracy_score as acc
 from ms_segmentation.evaluation.metrics import compute_metrics
 from torch.optim import Adadelta, Adam
 
-debug = True
+debug = False
 
 options = {}
 options['val_split']  = 0.2
 #options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz']
-options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz', 't2.nii.gz']
+options['input_data'] = ['flair_norm.nii.gz', 'mprage_norm.nii.gz', 'pd_norm.nii.gz', 't2_norm.nii.gz']
 #options['input_data'] = ['flair.nii.gz', 'pd_times_flair.nii.gz', 't2_times_flair.nii.gz', 't1_inv_times_flair.nii.gz', 'sum_times_flair.nii.gz']
 #options['input_data'] = ['fused_flt2.nii.gz']
-options['gt'] = 'mask1.nii.gz'                     # ACHTUUUUUUUUUUUUUUUUUUNG!
+options['gt'] = 'mask1.nii.gz'                     
 options['brain_mask'] = 'brain_mask.nii.gz'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
@@ -58,9 +58,8 @@ options['patch_sampling'] = 'mask' # (mask, balanced or balanced+roi or non-unif
 options['loss'] = 'dice' # (dice, cross-entropy, categorical-cross-entropy)
 options['resample_each_epoch'] = False
 
-
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS'
-path_data = jp(path_base, 'isbi_cs')
+path_data = jp(path_base, 'cs_normalized_images')                          ## ACHTUUUUUNG
 options['path_data'] = path_data
 path_res = jp(path_base, "cross_validation")
 all_patients = list_folders(path_data)
@@ -72,14 +71,23 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNet3D")
 
-#experiment_name = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation\CROSS_VALIDATION_UNet3D_2020-05-04_18_48_20[flair_only]'
+validation_images = ['03', '03', '04', '05', '02'] # so that all experiments use the same validation image
+
+#experiment_name = 'zCROSS_VALIDATION_UNet3D_2020-06-05_18_03_26[hybrid_skip_connections_new_hist_match-no_train]'
 fold = 0
 for curr_test_patient in all_patients:
     fold += 1
-    curr_train_patients = all_patients.copy()
-    curr_train_patients.remove(curr_test_patient)
 
-    options['training_samples'] = curr_train_patients
+    #For cross-validation it is necessary to remove fields so that they do not cause errors in function create_training_validation_sets
+    if "training_path" in options:
+        del options['training_path']
+    if "test_path" in options:
+        del options['test_path']
+
+    curr_train_patients = all_patients.copy()
+    curr_train_patients.remove(curr_test_patient) # List of patients minus the one used for test
+
+    options['training_samples'] = curr_train_patients.copy() # added .copy()
     options['test_samples'] = [curr_test_patient]
 
     experiment_folder = jp(path_res, experiment_name) 
@@ -92,16 +100,14 @@ for curr_test_patient in all_patients:
     path_segmentations = jp(path_results, "results")
     create_folder(path_segmentations)
 
+    input_dictionary = create_training_validation_sets(options, dataset_mode="cs", specific_val=[validation_images[fold-1]]) #, specific_val = ['05']
 
-    input_dictionary = create_training_validation_sets(options, dataset_mode="cs")
-
-
-    transf = transforms.Compose([   RandomFlipX(),
-                                    RandomFlipY(),
-                                    RandomFlipZ(),
-                                    ToTensor3DPatch()
-                                ])
-
+    options["transforms"] = None
+    #options["transforms"] = transforms.Compose([   RandomFlipX(),
+    #                                RandomFlipY(),
+    #                                RandomFlipZ(),
+    #                                ToTensor3DPatch()
+    #                            ])
     
     print('Training data: ')
     
@@ -114,7 +120,7 @@ for curr_test_patient in all_patients:
                                         norm_type=options['norm_type'],
                                         sampling_type=options['patch_sampling'],
                                         resample_epoch=options['resample_each_epoch'],
-                                        transform=None)
+                                        transform=options["transforms"])
 
     training_dataloader = DataLoader(training_dataset, 
                                     batch_size=options['batch_size'],
@@ -131,21 +137,20 @@ for curr_test_patient in all_patients:
                                             norm_type=options['norm_type'],
                                             sampling_type=options['patch_sampling'],
                                             resample_epoch=options['resample_each_epoch'],
-                                            transform=None)
+                                            transform=options["transforms"])
 
     validation_dataloader = DataLoader(validation_dataset, 
                                     batch_size=options['batch_size'],
                                     shuffle=True)
-    
 
-    lesion_model = UNet_3D_double_skip_hybrid(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
+
+    lesion_model = UNet_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
+    #lesion_model = UNet_3D_double_skip_hybrid(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
     #lesion_model.cuda()
     #input_tensor = torch.rand(16, 4, 32, 32, 32).cuda()
     #pred = lesion_model(input_tensor)
 
     options['model_name'] = lesion_model.__class__.__name__
-    model_name = 'ms_lesion_segmentation'
-
 
     # define the torch.device
     device = torch.device('cuda') if options['gpu_use'] else torch.device('cpu')
@@ -158,8 +163,6 @@ for curr_test_patient in all_patients:
 
     # send the model to the device
     lesion_model = lesion_model.to(device)
-
-
 
     early_stopping = EarlyStopping(patience=options['patience'], verbose=True)
 
@@ -174,16 +177,6 @@ for curr_test_patient in all_patients:
     training = True
     train_complete = False
     epoch = 1
-
-    def save_batch(x, y):
-            x_np = x.detach().cpu().numpy() # 16,3,32,32,32
-            y_np = y.detach().cpu().numpy() # 16,1,32,32,32
-            for i_batch in range(x_np.shape[0]):
-                save_image(y_np[i_batch, 0,:,:,:], "label_batch_"+ str(i_batch) +".nii.gz")
-                for i_seq in range(x_np.shape[1]):
-                    save_image(x_np[i_batch, i_seq, :, :, :], "img_batch_"+str(i_batch)+ "_seq_"+str(i_seq) + ".nii.gz")
-
-
 
     try:
         while training:
@@ -203,7 +196,6 @@ for curr_test_patient in all_patients:
             # set the model into train mode
             lesion_model.train() #Put in train mode
             for b_t, (data, target) in enumerate(training_dataloader):
-                    print("Training. Mini-batch ", b_t+1, "/", len(training_dataloader))
                     # process batches: each batch is composed by training (x) and labels (y)
                     # x = [batch_size, num_modalities, patch_dim1, patch_dim2, patch_dim3]
                     # y = [batch_size, 1, patch_dim1, patch_dim2, patch_dim3]
@@ -211,7 +203,6 @@ for curr_test_patient in all_patients:
                     x = data.to(device)
                     y = target.to(device)
 
-                    
                     #save_batch(x, y)
 
                     # clear gradients
@@ -221,9 +212,6 @@ for curr_test_patient in all_patients:
                     pred = lesion_model(x)
                     
                     # pred = [batch_size, num_classes, patch_dim1, patch_dim2, patch_dim3]
-
-                    # compute the loss. 
-                    # we ignore the index=2
 
                     if options['loss']=='dice':
                         y_one_hot = pred.data.clone()
@@ -263,9 +251,10 @@ for curr_test_patient in all_patients:
                         pred_labels = pred.detach().cpu().numpy().astype('float32')
                         pred_labels = np.argmax(pred_labels, axis=1).reshape(-1).astype(np.uint8)
                         batch_jacc = jsc(pred_labels,lbl, average = 'binary')
-                        print("**Epoch:** ", epoch)
-                        print("Training Loss: ", loss.item(), end = ", ")
-                        print("Training - Batch JSC: ", batch_jacc, end = ", ")
+                        print("*** Fold:", fold, "  , Epoch:", epoch, " ***")
+                        print("Training. Mini-batch ", b_t+1, "/", len(training_dataloader))
+                        print("Training Loss: {:.4f}, Jacc: {:.4f}".format(loss.item(), batch_jacc))
+                        print_line()
                         #print("Num 1s: ", len(pred_labels[pred_labels>0]))
                         jaccs_train.append(batch_jacc)
                     
@@ -322,15 +311,15 @@ for curr_test_patient in all_patients:
                         pred_labels = pred.detach().cpu().numpy().astype('float32')
                         pred_labels = np.argmax(pred_labels, axis=1).reshape(-1).astype(np.uint8)
                         batch_jacc = jsc(pred_labels,lbl, average = 'binary')
-                        print("**Epoch:** ", epoch)
-                        print("Validation Loss: ", loss.item(), end = ", ")
-                        print("Validation - Batch JSC: ", batch_jacc)
+                        print("*** Fold:", fold, "  , Epoch:", epoch, " ***")
+                        print("Validation. Mini-batch ", b_v+1, "/", len(training_dataloader))
+                        print("Training Loss: {:.4f}, Jacc: {:.4f}".format(loss.item(), batch_jacc))
+                        print_line()
                         jaccs_val.append(batch_jacc)
             
             # compute mean metrics
             train_loss /= (b_t + 1)
             val_loss /= (b_v + 1)
-
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -351,7 +340,7 @@ for curr_test_patient in all_patients:
                 train_jacc,
                 val_loss,
                 val_jacc))
-            
+
             
             #Check conditions for early stopping. Save model if improvement in validation loss with respect to previous epoch
             early_stopping(val_loss, lesion_model, path_models)
@@ -368,7 +357,7 @@ for curr_test_patient in all_patients:
                 training = False
                 
 
-            # Load latest best model
+        # Load latest best model
         lesion_model.load_state_dict(torch.load(jp(path_models, "checkpoint.pt")))
     except KeyboardInterrupt:
         # If training is stopped, load last model
@@ -377,17 +366,20 @@ for curr_test_patient in all_patients:
 
         plot_learning_curve(train_losses, val_losses, the_title="Learning curve", measure = "Loss (" + options["loss"] + ")", early_stopping = True, filename = jp(path_results, "loss_plot.png"))
         plot_learning_curve(train_jaccs, val_jaccs, the_title="Jaccard plot", measure = "Jaccard", early_stopping = False, filename = jp(path_results, "jaccard_plot.png"))                  
-        #plot_learning_curve(train_accs, val_accs, the_title="Accuracy plot", measure = "Accuraca", early_stopping = False, filename = jp(path_results, "acc_plot.png"))                  
 
     options['max_epoch_reached'] = epoch
 
-                        
+    options['validation_subjects'] = list(input_dictionary['input_val_data'].keys()) #new line
+    options['training_subjects'] = list(input_dictionary['input_train_data'].keys()) #new line           
+    options['test_subjects'] = [curr_test_patient]
 
     #Plot learning curve
     if train_complete:
         plot_learning_curve(train_losses, val_losses, the_title="Learning curve", measure = "Loss (" + options["loss"] + ")", early_stopping = True, filename = jp(path_results, "loss_plot.png"))
         #plot_learning_curve(train_accs, val_accs, the_title="Accuracy plot", measure = "Accuracy", early_stopping = False, filename = jp(path_results, "acc_plot.png"))                  
         plot_learning_curve(train_jaccs, val_jaccs, the_title="Jaccard plot", measure = "Jaccard", early_stopping = False, filename = jp(path_results, "jaccard_plot.png"))
+        #Save losses using pickle
+        save_this([train_losses, val_losses, train_jaccs, val_jaccs], path_results, "losses_values")
     else:
         try:
             lesion_model.load_state_dict(torch.load(jp(path_models,"checkpoint.pt")))
@@ -395,10 +387,10 @@ for curr_test_patient in all_patients:
             raise ValueError("No model found")
 
 
-
+    del training_dataset, training_dataloader, validation_dataset, validation_dataloader
 
     #Evaluate all test images
-    columns = columns = compute_metrics(None, None, labels_only=True)
+    columns = compute_metrics(None, None, labels_only=True)
     df = pd.DataFrame(columns = columns)
 
     test_images = [curr_test_patient]
@@ -459,9 +451,7 @@ for curr_test_patient in all_patients:
             img_nib = nib.Nifti1Image(labels, np.eye(4))
             create_folder(jp(path_segmentations, case))
             nib.save(img_nib, jp(path_segmentations, case, case+"_"+ str(tp+1).zfill(2) +"_segm.nii.gz"))
-
             cnt += 1
-
 
     df.to_csv(jp(path_results, "results.csv"), float_format = '%.5f', index = False)
     print(df.mean())

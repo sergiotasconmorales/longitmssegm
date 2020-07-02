@@ -16,7 +16,7 @@ import torch
 import nibabel as nib
 import numpy as np  
 import pandas as pd
-from ms_segmentation.general.general import list_files_with_name_containing, create_folder, list_folders, save_image, get_experiment_name, create_log, cls, get_dictionary_with_paths
+from ms_segmentation.general.general import save_this, list_files_with_name_containing, create_folder, list_folders, save_image, get_experiment_name, create_log, cls, get_dictionary_with_paths
 from os.path import join as jp
 from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim_overlay, plot_learning_curve
 from medpy.io import load
@@ -34,14 +34,14 @@ from sklearn.metrics import jaccard_score as jsc
 from ms_segmentation.evaluation.metrics import compute_metrics
 
 
-debug = True 
+debug = False 
 if debug:
     print("Debugging mode ...")
 
 
 options = {}
 options['val_split']  = 0.2
-options['input_data'] = ['flair']
+options['input_data'] = ['flair_norm']
 #options['input_data'] = ['pd_times_flair', 't2_times_flair', 't1_inv_times_flair', 'sum_times_flair']
 options['gt'] = 'mask1'
 options['brain_mask'] = 'brain_mask'
@@ -62,7 +62,7 @@ options['resample_each_epoch'] = False
 
 
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L'
-path_data = jp(path_base, 'isbi_train')
+path_data = jp(path_base, 'longitudinal_normalized_images')    #ACHTUUUUNG
 options['path_data'] = path_data
 path_res = jp(path_base, "cross_validation")
 all_patients = list_folders(path_data)
@@ -74,10 +74,18 @@ if(debug):
 else:
     experiment_name, curr_date, curr_time = get_experiment_name(the_prefix = "CROSS_VALIDATION_UNetLongit")
 
+validation_images = ['03', '03', '04', '05', '02'] # so that all experiments use the same validation image
+
 #experiment_name = 'CROSS_VALIDATION_UNetLongit_2020-05-26_11_12_15'
 fold = 0
-for curr_test_patient in all_patients:  #ACHTUUUUUNG
+for curr_test_patient in all_patients:  
     fold += 1
+    #For cross-validation it is necessary to remove fields so that they do not cause errors in function create_training_validation_sets
+    if "training_path" in options:
+        del options['training_path']
+    if "test_path" in options:
+        del options['test_path']
+
     curr_train_patients = all_patients.copy()
     curr_train_patients.remove(curr_test_patient)
 
@@ -96,7 +104,7 @@ for curr_test_patient in all_patients:  #ACHTUUUUUNG
 
 
     # Organize the data in a dictionary 
-    input_dictionary = create_training_validation_sets(options, dataset_mode="l")
+    input_dictionary = create_training_validation_sets(options, dataset_mode="l", specific_val=[validation_images[fold-1]])
 
     # Create training, validation and test patches
 
@@ -266,7 +274,7 @@ for curr_test_patient in all_patients:  #ACHTUUUUUNG
                     # y = [batch_size, num_timepoints, 1, patch_dim1, patch_dim2, patch_dim3]
         
                     x = data.squeeze(axis = 2).to(device)
-                    y = target[:,-2,:,:,:,:].to(device)
+                    y = target[:,0,:,:,:,:].to(device)
                     
                     #save_batch(x, y)
 
@@ -324,7 +332,7 @@ for curr_test_patient in all_patients:  #ACHTUUUUUNG
                     
                     print("Validation. Mini-batch ", b_v+1, "/", len(validation_dataloader))
                     x = data.squeeze(axis = 2).to(device)
-                    y = target[:,-2,:,:,:,:].to(device)
+                    y = target[:,0,:,:,:,:].to(device)
                     
                     # infer the current batch 
                     with torch.no_grad(): #Don't consider the gradients
@@ -411,6 +419,7 @@ for curr_test_patient in all_patients:  #ACHTUUUUUNG
     if train_complete:
         plot_learning_curve(train_losses, val_losses, the_title="Learning curve", measure = "Loss (" + options["loss"] + ")", early_stopping = True, filename = jp(path_results, "loss_plot.png"))
         plot_learning_curve(train_jaccs, val_jaccs, the_title="Jaccard plot", measure = "Jaccard", early_stopping = False, filename = jp(path_results, "jaccard_plot.png"))
+        save_this([train_losses, val_losses, train_jaccs, val_jaccs], path_results, "losses_values")
     else:
         try:
             lesion_model.load_state_dict(torch.load(jp(path_models,"checkpoint.pt")))
@@ -435,7 +444,7 @@ for curr_test_patient in all_patients:  #ACHTUUUUUNG
 
         return output_groups
 
-
+    del training_dataset, training_dataloader, validation_dataset, validation_dataloader
 
     #Evaluate all test images
     columns = columns = compute_metrics(None, None, labels_only=True)

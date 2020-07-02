@@ -590,7 +590,7 @@ class UNet_ConvGRU_3D_1(nn.Module):
 
 class UNet_ConvLSTM_3D_alt(nn.Module):
     """
-    Basic U-net model
+    UnetConvLSTM as an extension of Novikov 2019
     Changes: 
         Blocks implemented according to class blocks defined in unet3d file
     """
@@ -679,7 +679,7 @@ class UNet_ConvLSTM_3D_alt(nn.Module):
 
 class UNet_ConvLSTM_3D_hope(nn.Module):
     """
-    Basic U-net model
+    
     Changes: 
         Blocks implemented according to class blocks defined in unet3d file
     """

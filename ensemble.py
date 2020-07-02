@@ -7,9 +7,9 @@ from os.path import join as jp
 from ms_segmentation.general.general import save_image, list_folders, create_folder
 
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation'
-ensemble_name = 'ensemble'
+ensemble_name = 'aensemble2'
 create_folder(jp(path_base, ensemble_name))
-indexes_experiments = [1,2,3]
+indexes_experiments = [13,14,15]
 all_experiments = list_folders(path_base)
 to_consider = [all_experiments[i] for i in indexes_experiments]
 num_folds = 5

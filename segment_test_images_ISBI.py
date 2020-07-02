@@ -37,13 +37,17 @@ from torch.optim import Adadelta, Adam
 import cc3d
 
 # Name of experiment to evaluate
-experiment_name = 'CROSS_VALIDATION_UNet3D_2020-05-03_18_31_37[alt_images]'
-experiment_type = 'cs' # cs or l
+experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-06-23_21_31_39[longitudinal_chisquare_normalization_new]'
+experiment_type = 'l' # cs or l
 
 
 #path_test_cs = r'D:\dev\ms_data\Challenges\ISBI2015\sample1'
-path_test_cs = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\cross_sectional'
-path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\longitudinal'
+path_test_cs = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\chi_square_images_cs'    #ACHTUUUUNG
+if path_test_cs.split("\\")[-1] == "histogram_matched":
+    print("Histogram matched test dataset is being used")
+
+#path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\longitudinal'    
+path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\chi_square_images_longit'
 path_experiments_cs = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation'
 path_experiments_l = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation'
 #path_results = r'D:\dev\ms_data\Challenges\ISBI2015\res'
@@ -74,7 +78,7 @@ all_indexes = {}
 case_index = 0
 post_processing = True
 min_area = 3
-selection = {"fold01": False, "fold02": True, "fold03": True, "fold04": False, "fold05": True}
+selection = {"fold01": True, "fold02": True, "fold03": True, "fold04": True, "fold05": True}
 if list(selection.values()).count(True)%2 == 0:
     raise Exception("Number of folds to consider should be odd") 
 
@@ -204,7 +208,7 @@ if experiment_type == 'cs': # if experiment is cross-sectional
         if post_processing: #Remove very small lesions (3 voxels)
             labels_out = cc3d.connected_components(results[i_case,:,:,:])
             for i_cc in np.unique(labels_out):
-                if len(labels_out[labels_out == i_cc]) < min_area:
+                if len(labels_out[labels_out == i_cc]) <= min_area:
                     results[i_case,:,:,:][labels_out == i_cc] = 0
         save_image(results[i_case,:,:,:], jp(path_results, experiment_name_folder,"test"+all_indexes[i_case][0] + "_" + all_indexes[i_case][1] + "_qwertz.nii"))
 
@@ -231,8 +235,8 @@ elif experiment_type == 'l':
             continue
         fold_segmentations = []
         # create model
-        parameters_dict["model_name"] = 'UNet_ConvLSTM_3D_alt'
-        lesion_model = eval(parameters_dict["model_name"])(n_channels=eval(parameters_dict['num_timepoints']), n_classes=2, bilinear = False)
+        #parameters_dict["model_name"] = 'UNet_ConvLSTM_3D_alt'
+        lesion_model = eval(parameters_dict["model_name"])(n_channels=len(eval(parameters_dict['input_data'])), n_classes=2, bilinear = False)
         lesion_model.cuda()
 
         # try to load the weights
@@ -258,10 +262,10 @@ elif experiment_type == 'l':
                                                     mode = "l",
                                                     num_timepoints=tot_timepoints)
 
-            if 'LSTM' in parameters_dict["model_name"]:
-                inf_patches_sets = divide_inference_slices(infer_patches, eval(parameters_dict['num_timepoints']))
-            else:
-                inf_patches_sets = get_groups(infer_patches, tot_timepoints, eval(parameters_dict['num_timepoints'])) #group patches to predict every timepoint
+            #if 'LSTM' in parameters_dict["model_name"]:
+            #    inf_patches_sets = divide_inference_slices(infer_patches, eval(parameters_dict['num_timepoints']))
+            #else:
+            inf_patches_sets = get_groups(infer_patches, tot_timepoints, eval(parameters_dict['num_timepoints']), both_time_and_seq=True) #group patches to predict every timepoint
 
 
             batch_size = eval(parameters_dict['batch_size'])
@@ -307,7 +311,7 @@ elif experiment_type == 'l':
         if post_processing: #Remove very small lesions (3 voxels)
             labels_out = cc3d.connected_components(results[i_case,:,:,:])
             for i_cc in np.unique(labels_out):
-                if len(labels_out[labels_out == i_cc]) < min_area:
+                if len(labels_out[labels_out == i_cc]) <= min_area:
                     results[i_case,:,:,:][labels_out == i_cc] = 0
         save_image(results[i_case,:,:,:], jp(path_results, experiment_name_folder,"test"+all_indexes[i_case][0] + "_" + all_indexes[i_case][1] + "_qwertz.nii"))
 
