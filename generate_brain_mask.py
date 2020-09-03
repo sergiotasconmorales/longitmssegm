@@ -4,7 +4,7 @@ from os.path import join as jp
 import SimpleITK as sitk 
 from ms_segmentation.general.general import list_folders
 
-path_data = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\cross_sectional'
+path_data = r'D:\dev\ms_data\Preprocessed-AnonymPatData'
 cases_list = list_folders(path_data)
 for case in cases_list:
     print("Current case: ", case)

@@ -1498,7 +1498,7 @@ def normalize_data(im,
     - nomr_type: 'zero_one', 'standard'
 
     outputs:
-    - normalized image
+    - normalized image  
     """
     mask = np.copy(im > 0 if brainmask is None else brainmask)
 

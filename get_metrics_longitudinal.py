@@ -10,7 +10,7 @@ from ms_segmentation.evaluation.metrics import compute_metrics
 last_only = True
 
 exp_folders = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation'
-gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\histogram_matched'
+gt_folder = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\isbi_train'
 
 gt_list = ['mask1', 'mask2']
 

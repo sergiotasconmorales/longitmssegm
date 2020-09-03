@@ -24,7 +24,7 @@ from ms_segmentation.data_generation.patch_manager_3d import (PatchLoader3DTime,
                                                             build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, \
                                                                 RandomRotationXY, RandomRotationXZ, RandomRotationYZ, ToTensor3DPatch)
 from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_encoder#, UNet3D_1, UNet3D_2
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_encoder
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvLSTM_3D_alt_bidirectional, UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_encoder
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.optim import Adadelta, Adam
@@ -41,9 +41,10 @@ if debug:
 
 options = {}
 options['val_split']  = 0.2
-options['input_data'] = ['flair_norm', 'mprage_norm', 'pd_norm', 't2_norm']
+#options['input_data'] = ['flair_norm', 'mprage_norm', 'pd_norm', 't2_norm']
+options['input_data'] = ['flair', 'mprage', 'pd', 't2']
 #options['input_data'] = ['flair', 'pd_times_fl', 't2_times_fl', 't1_inv_times_fl', 'sum_times_fl']
-options['gt'] = 'mask1'
+options['gt'] = 'mask2'
 options['brain_mask'] = 'brain_mask'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
@@ -62,7 +63,7 @@ options['resample_each_epoch'] = False
 
 
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L'
-path_data = jp(path_base, 'longitudinal_normalized_images')          # ACHTUUUNG
+path_data = jp(path_base, 'isbi_train')          # ACHTUUUNG
 options['path_data'] = path_data
 path_res = jp(path_base, "cross_validation")
 all_patients = list_folders(path_data)
@@ -76,7 +77,7 @@ else:
 
 validation_images = ['03', '03', '04', '05', '02'] # so that all experiments use the same validation image
 
-#experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-06-13_08_43_21'
+#experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-07-25_06_46_44'
 fold = 0
 for curr_test_patient in all_patients:
     fold += 1
@@ -191,7 +192,7 @@ for curr_test_patient in all_patients:
     # 2 output classes (healthy and MS lesion)
     #lesion_model = Unet3D(input_size=len(options['input_data']), output_size=options['num_classes'])
     #lesion_model = UNet_3D_double_encoder(n_channels_t=options['num_timepoints'], n_channels_m=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
-    lesion_model = UNet_ConvLSTM_3D_encoder(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
+    lesion_model = UNet_ConvLSTM_3D_alt_bidirectional(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear=False)
     #lesion_model = torch.cat([x3_1, x3_2], dim=1))(input_size=len(options['input_data']), output_size=2)
     #lesion_model = UNet3D_2(input_size=len(options['input_data']), output_size=2)
     #lesion_model.cuda()
@@ -503,6 +504,7 @@ for curr_test_patient in all_patients:
                                                 patch_shape=options['patch_size'],
                                                 step=options['sampling_step'],
                                                 normalize=options['normalize'],
+                                                norm_type = options['norm_type'],
                                                 mode = "l",
                                                 num_timepoints=tot_timepoints)
 
