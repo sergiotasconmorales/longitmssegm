@@ -38,17 +38,17 @@ debug = False
 
 options = {}
 options['val_split']  = 0.2
-#options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz']
-options['input_data'] = ['flair_norm.nii.gz', 'mprage_norm.nii.gz', 'pd_norm.nii.gz', 't2_norm.nii.gz']
+options['input_data'] = ['flair.nii.gz', 'mprage.nii.gz', 'pd.nii.gz', 't2.nii.gz']
+#options['input_data'] = ['flair_norm.nii.gz', 'mprage_norm.nii.gz', 'pd_norm.nii.gz', 't2_norm.nii.gz']
 #options['input_data'] = ['flair.nii.gz', 'pd_times_flair.nii.gz', 't2_times_flair.nii.gz', 't1_inv_times_flair.nii.gz', 'sum_times_flair.nii.gz']
 #options['input_data'] = ['fused_flt2.nii.gz']
-options['gt'] = 'mask1.nii.gz'                     
+options['gt'] = 'mask2.nii.gz'                     
 options['brain_mask'] = 'brain_mask.nii.gz'
 options['num_classes'] = 2
 options['patch_size'] = (32,32,32)
 options['sampling_step'] = (16,16,16)
 options['normalize'] = True 
-options['norm_type'] = 'zero_one'
+options['norm_type'] = 'standard' # 'zero_one'
 options['batch_size'] = 16
 options['patience'] =  20 #Patience for the early stopping
 options['gpu_use'] = True
@@ -59,7 +59,7 @@ options['loss'] = 'dice' # (dice, cross-entropy, categorical-cross-entropy)
 options['resample_each_epoch'] = False
 
 path_base = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS'
-path_data = jp(path_base, 'cs_normalized_images')                          ## ACHTUUUUUNG
+path_data = jp(path_base, 'isbi_cs') #cs_normalized_images                         ## ACHTUUUUUNG
 options['path_data'] = path_data
 path_res = jp(path_base, "cross_validation")
 all_patients = list_folders(path_data)
@@ -73,7 +73,7 @@ else:
 
 validation_images = ['03', '03', '04', '05', '02'] # so that all experiments use the same validation image
 
-#experiment_name = 'zCROSS_VALIDATION_UNet3D_2020-06-05_18_03_26[hybrid_skip_connections_new_hist_match-no_train]'
+#experiment_name = 'CROSS_VALIDATION_UNet3D_2020-07-18_14_44_53'
 fold = 0
 for curr_test_patient in all_patients:
     fold += 1
@@ -142,7 +142,7 @@ for curr_test_patient in all_patients:
     validation_dataloader = DataLoader(validation_dataset, 
                                     batch_size=options['batch_size'],
                                     shuffle=True)
-
+    
 
     lesion_model = UNet_3D_alt(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
     #lesion_model = UNet_3D_double_skip_hybrid(n_channels=len(options['input_data']), n_classes=options['num_classes'], bilinear = False)
@@ -416,6 +416,7 @@ for curr_test_patient in all_patients:
                                                             patch_shape=options['patch_size'],
                                                             step=options['sampling_step'],
                                                             normalize=options['normalize'],
+                                                            norm_type = options['norm_type'],
                                                             mode = "cs"
                                                             )
             

@@ -23,7 +23,7 @@ from ms_segmentation.plot.plot import shim_slice, shim_overlay_slice, shim, shim
 from medpy.io import load
 from ms_segmentation.data_generation.patch_manager_3d import PatchLoader3DLoadAll, build_image, get_inference_patches, reconstruct_image, RandomFlipX, RandomFlipY, RandomFlipZ, ToTensor3DPatch
 from ms_segmentation.architectures.unet3d import UNet_3D_alt, UNet_3D_double_skip_hybrid
-from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt, UNet_ConvLSTM_3D_alt_bidirectional
+from ms_segmentation.architectures.unet_c_gru import UNet_ConvGRU_3D_1, UNet_ConvLSTM_3D_alt
 from ms_segmentation.architectures.cnn1 import CNN1, CNN2
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
@@ -37,24 +37,24 @@ from torch.optim import Adadelta, Adam
 import cc3d
 
 # Name of experiment to evaluate
-experiment_name = 'CROSS_VALIDATION_UNet3D_2020-06-25_07_07_15[chi-square_norm_train]'
-experiment_type = 'cs' # cs or l
+experiment_name = 'CROSS_VALIDATION_UNetConvLSTM3D_2020-06-23_21_31_39[longitudinal_chisquare_normalization_new]'
+experiment_type = 'l' # cs or l
 
 
 #path_test_cs = r'D:\dev\ms_data\Challenges\ISBI2015\sample1'
-path_test_cs = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\chi_square_images_cs'    #ACHTUUUUNG
+path_test_cs = r'D:\dev\ms_data\Preprocessed-AnonymPatData\cross_sectional'    #ACHTUUUUNG
 if path_test_cs.split("\\")[-1] == "histogram_matched":
     print("Histogram matched test dataset is being used")
 
-path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\longitudinal'    
-#path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\chi_square_images_longit'
+#path_test_l = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\longitudinal'    
+path_test_l = r'D:\dev\ms_data\Preprocessed-AnonymPatData\normalized_wm'
 path_experiments_cs = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_CS\cross_validation'
 path_experiments_l = r'D:\dev\ms_data\Challenges\ISBI2015\ISBI_L\cross_validation'
 #path_results = r'D:\dev\ms_data\Challenges\ISBI2015\res'
 if experiment_type == 'cs':
-    path_results = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\results_cs'
+    path_results = r'D:\dev\ms_data\Preprocessed-AnonymPatData\results'
 else:
-    path_results = r'D:\dev\ms_data\Challenges\ISBI2015\Test_Images\results_l'
+    path_results = r'D:\dev\ms_data\Preprocessed-AnonymPatData\results'
 
 create_folder(path_results)
 use_gpu = True
@@ -78,7 +78,7 @@ all_indexes = {}
 case_index = 0
 post_processing = True
 min_area = 3
-selection = {"fold01": True, "fold02": True, "fold03": True, "fold04": True, "fold05": True}
+selection = {"fold01": False, "fold02": True, "fold03": True, "fold04": True, "fold05": False}
 if list(selection.values()).count(True)%2 == 0:
     raise Exception("Number of folds to consider should be odd") 
 
@@ -162,7 +162,6 @@ if experiment_type == 'cs': # if experiment is cross-sectional
                                                                 patch_shape=eval(parameters_dict['patch_size']),
                                                                 step=eval(parameters_dict['sampling_step']),
                                                                 normalize=eval(parameters_dict['normalize']),
-                                                                norm_type = parameters_dict["norm_type"],
                                                                 mode = "cs"
                                                                 )
                 
@@ -260,7 +259,6 @@ elif experiment_type == 'l':
                                                     patch_shape=eval(parameters_dict['patch_size']),
                                                     step=eval(parameters_dict['sampling_step']),
                                                     normalize=eval(parameters_dict['normalize']),
-                                                    norm_type = parameters_dict["norm_type"],
                                                     mode = "l",
                                                     num_timepoints=tot_timepoints)
 
